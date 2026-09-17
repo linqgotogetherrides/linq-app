@@ -1,0 +1,162 @@
+{
+  "app_name": "LinQ Rides",
+  "personality": "1 iOS-Native Clean structure with 4 Tactile / Playful pill elements and rounded cards",
+  "personality_one_liner": "A modern, trust-focused community mobility platform that feels youthful, safe, and distinctly unlike traditional ride-hailing apps.",
+  "color": {
+    "surface": "#FFFFFF",
+    "onSurface": "#172033",
+    "surfaceSecondary": "#F8FAFC",
+    "onSurfaceSecondary": "#172033",
+    "surfaceTertiary": "#EEF4FF",
+    "onSurfaceTertiary": "#173D9D",
+    "surfaceInverse": "#172033",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#2453C8",
+    "brandPrimary": "#2453C8",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#173D9D",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#EEF4FF",
+    "onBrandTertiary": "#173D9D",
+    "success": "#10B981",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#FFFFFF",
+    "error": "#EF4444",
+    "onError": "#FFFFFF",
+    "info": "#3B82F6",
+    "onInfo": "#FFFFFF",
+    "border": "#E8ECF3",
+    "borderStrong": "#D1D9E6",
+    "divider": "#E8ECF3"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room for content, strict single column for form inputs, minimum 56pt height for tappable rows. Padding must be intentional and soft to match the friendly feel.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use glassmorphism for the bottom tab bar",
+      "Use frosted glass overlays on featured Mission1000 banners or sticky headers during scroll",
+      "Apply translucent tinted base underneath foreground content to guarantee readability"
+    ],
+    "dont's": [
+      "Never apply glass to dense route lists, body content, or form fields",
+      "Do not blur basic list rows or chips"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Splash & Onboarding",
+      "purpose": "Introduce the Mission1000 eco-friendly traffic initiative and brand identity.",
+      "states": {
+        "loading": "Centered LinQ logo pulse",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Full-bleed imagery with a top-to-bottom vertical linear gradient scrim (transparent to 80% surfaceInverse). Primary CTA (pill) pinned to the bottom 1/3 inside safe area."
+    },
+    {
+      "name": "Auth Flow (Login / OTP)",
+      "purpose": "Verify user identity securely with high trust markers.",
+      "states": {
+        "loading": "Spinner in primary CTA",
+        "empty": "N/A",
+        "error": "Error toast with retry CTA"
+      },
+      "layout": "Clean, distraction-free single column. Large typography for instructions. Forms use floating-free labels. KeyboardAvoidingView with CTA pinned above the keyboard."
+    },
+    {
+      "name": "Home & Ride Search",
+      "purpose": "Switch between Instant, Daily, and Planned modes and initiate a ride twin search.",
+      "states": {
+        "loading": "Skeleton cards mimicking route rows",
+        "empty": "Friendly illustration explaining how to find a ride twin",
+        "error": "Toast with retry action"
+      },
+      "layout": "Top sticky segmented control (pill style) for Instant/Daily/Planned. Followed by a Mission1000 featured banner card. The bottom area contains vertically stacked, tap-based ActionCards for available routes. Each route card anchors the duration/time top-left and price right. Keep cards minimal (max 6 data points) on white surfaceSecondary with soft shadows to ensure scannability."
+    },
+    {
+      "name": "Create Ride",
+      "purpose": "Allow drivers to post their route, vehicle, and price details easily.",
+      "states": {
+        "loading": "Overlay spinner",
+        "empty": "N/A",
+        "error": "Inline validation text"
+      },
+      "layout": "Multi-step or long-scroll form. Single column layout. Use steppers for seats, a slider for price, and highly visible pill chips for selecting ride type. Sticky 'Publish Ride' button at the bottom."
+    },
+    {
+      "name": "Messages & Profile",
+      "purpose": "Manage connections, verifications, wallet rewards, and chats.",
+      "states": {
+        "loading": "List skeletons",
+        "empty": "Empty state illustration with 'No active chats/rides'",
+        "error": "Retry connection button"
+      },
+      "layout": "Standard list view with minimum 56pt tappable rows. Profile utilizes a top hero banner section (tinted brand background) with overlapping avatar. Wallet shows a prominent Balance card with a 3D icon and transaction history stacked vertically below."
+    }
+  ],
+  "images": {
+    "onboarding_mission1000": {
+      "url": "https://images.unsplash.com/photo-1597762333765-cbcd63dd8acc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzB8MHwxfHNlYXJjaHwxfHxncmVlbiUyMGNsZWFuJTIwdXJiYW4lMjBjaXR5JTIwdHJhZmZpY3xlbnwwfHx8fDE3ODY3NzU4MjF8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Clean green urban city road representing Mission1000 traffic reduction"
+    },
+    "ride_twin_match": {
+      "url": "https://images.unsplash.com/photo-1534708112740-cb40ecb0663e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwxfHxzbWlsaW5nJTIwcGVvcGxlJTIwaW4lMjBjYXIlMjBkcml2aW5nfGVufDB8fHx8MTc4Njc3NTgyMXww&ixlib=rb-4.1.0&q=85",
+      "alt": "Smiling woman driving, representing a friendly ride twin"
+    },
+    "wallet_3d_icon": {
+      "url": "https://images.unsplash.com/photo-1660139099083-03e0777ac6a7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwxfHx3YWxsZXQlMjBpY29uJTIwM2QlMjBncmFwaGljfGVufDB8fHx8MTc4Njc3NTgyMnww&ixlib=rb-4.1.0&q=85",
+      "alt": "3D wallet icon for rewards section"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the user's color palette: LinQ Blue (#2453C8) is the hero color. Dark navy (#172033) is for primary text. Use the provided soft border (#E8ECF3). NO other blues or purples are permitted.",
+    "The layout must prioritize a premium iOS-Native Clean structure but inject tactile warmth using pill-shaped (999) buttons, pill segmented controls, and rounded cards (md/lg).",
+    "Font weight cap is 500. Use Plus Jakarta Sans for all typography. Create visual hierarchy through size and color/opacity, not by using weights like 600/700/Bold.",
+    "For the Ride matching/Discovery cards, implement the 'ActionCard' pattern. Keep each card to a maximum of 6 data points, pinning the most critical information (Time/Duration) to the top-left, and price on the right. Avoid excessive infographics on the cards.",
+    "Implement a top-to-bottom gradient scrim (transparent to 70-80% surfaceInverse) on the onboarding/splash image to ensure any overlaid white text is WCAG AA readable.",
+    "Buttons should always be sticky at the bottom for major actions (like 'Request Unlock' or 'Publish Ride') above the safe area, avoiding the need for users to scroll to act.",
+    "Ensure all interactive elements have a minimum 44x44pt touch target. Use hitSlop if the visual component is smaller."
+  ]
+}
