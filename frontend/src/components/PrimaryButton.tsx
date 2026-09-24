@@ -26,7 +26,6 @@ export default function PrimaryButton({
 }: Props) {
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
-  const isGhost = variant === 'ghost';
   const isDanger = variant === 'danger';
 
   const bg = isPrimary ? colors.primary : isDanger ? colors.error : isSecondary ? colors.surface : 'transparent';

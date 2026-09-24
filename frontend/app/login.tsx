@@ -24,7 +24,7 @@ export default function Login() {
       const phoneStr = phone.replace(/\D/g, '');
       const fullPhone = `+91${phoneStr}`;
       // Call the platform-agnostic auth function
-      const confirmation = await signInWithPhoneNumber(phoneStr);
+      const confirmation = await signInWithPhoneNumber(fullPhone);
       setConfirmResult(confirmation);
       router.push({ pathname: '/otp', params: { phone: fullPhone } });
     } catch (e: any) {

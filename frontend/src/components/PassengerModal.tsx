@@ -13,22 +13,24 @@ export interface PassengerData {
 interface Props {
   visible: boolean;
   initial?: PassengerData;
+  initialData?: PassengerData;
   onClose: () => void;
   onSave: (p: PassengerData) => void;
 }
 
-export default function PassengerModal({ visible, initial, onClose, onSave }: Props) {
+export default function PassengerModal({ visible, initial, initialData, onClose, onSave }: Props) {
+  const init = initialData || initial;
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [phone, setPhone] = useState('');
 
   useEffect(() => {
     if (visible) {
-      setName(initial?.name ?? '');
-      setAge(initial?.age ?? '');
-      setPhone(initial?.phone ?? '');
+      setName(init?.name ?? '');
+      setAge(init?.age ?? '');
+      setPhone(init?.phone ?? '');
     }
-  }, [visible, initial]);
+  }, [visible, init]);
 
   const valid = name.trim().length > 1;
 
@@ -39,7 +41,7 @@ export default function PassengerModal({ visible, initial, onClose, onSave }: Pr
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.header}>
-            <Text style={styles.title}>{initial ? 'Edit Passenger' : 'Add Passenger'}</Text>
+            <Text style={styles.title}>{init ? 'Edit Passenger' : 'Add Passenger'}</Text>
             <Pressable onPress={onClose} hitSlop={12}><Ionicons name="close" size={22} color={colors.textPrimary} /></Pressable>
           </View>
 
@@ -62,7 +64,7 @@ export default function PassengerModal({ visible, initial, onClose, onSave }: Pr
           </View>
 
           <View style={{ marginTop: spacing.lg }}>
-            <PrimaryButton testID="passenger-save" title={initial ? 'Update Passenger' : 'Add Passenger'} disabled={!valid} onPress={() => onSave({ name: name.trim(), age, phone })} />
+            <PrimaryButton testID="passenger-save" title={init ? 'Update Passenger' : 'Add Passenger'} disabled={!valid} onPress={() => onSave({ name: name.trim(), age, phone })} />
           </View>
         </View>
       </KeyboardAvoidingView>

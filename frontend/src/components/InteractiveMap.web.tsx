@@ -6,7 +6,7 @@ export default function InteractiveMap({ style }: { style?: any }) {
   return (
     <View style={[styles.container, style]}>
       <Text style={styles.text}>Map preview not available on Web</Text>
-      <Text style={styles.subtext}>Please compile for iOS or Android to see Mapbox.</Text>
+      <Text style={styles.subtext}>Please use the iOS or Android app to view the native map.</Text>
     </View>
   );
 }

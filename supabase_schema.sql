@@ -5,6 +5,10 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE TABLE IF NOT EXISTS user_profiles (
   id text PRIMARY KEY, -- Firebase UID
   phone_number text,
+  home_address text,
+  office_address text,
+  college_address text,
+  saved_locations jsonb NOT NULL DEFAULT '{}'::jsonb,
   kyc_status text DEFAULT 'not_verified', -- 'not_verified', 'pending', 'verified'
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()

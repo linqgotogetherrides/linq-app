@@ -5,13 +5,17 @@ export type MatchType = 'exact' | 'nearby' | 'other';
 export type RideStatus = 'active' | 'completed' | 'cancelled';
 export type RequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 export type VerificationStatus = 'verified' | 'pending' | 'not_verified';
-export type Plan = 'free' | 'weekly' | 'monthly';
+export type Plan = 'free' | 'yearly' | 'twoYear';
 
 export interface Location {
   label: string;
   address: string;
   lat?: number;
   lng?: number;
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number | null;
+  timestamp?: number;
 }
 
 export interface Vehicle {
@@ -31,6 +35,34 @@ export interface Passenger {
   isSelf?: boolean;
 }
 
+export type SavedLocationType = 'home' | 'office' | 'college';
+export type LocationFlowSource = 'home' | 'create-ride';
+
+export interface SavedLocation {
+  label: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  updatedAt?: string;
+}
+
+export interface SavedUserLocations {
+  home?: SavedLocation;
+  office?: SavedLocation;
+  college?: SavedLocation;
+  defaultPickup?: SavedLocation;
+  defaultDrop?: SavedLocation;
+}
+
+export interface LocationFlowResult {
+  id: number;
+  source: LocationFlowSource;
+  pickup: SavedLocation;
+  destination: SavedLocation;
+  distanceMeters?: number;
+  durationSeconds?: number;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -48,6 +80,8 @@ export interface User {
   emergencyContact?: string;
   homeAddress?: string;
   officeAddress?: string;
+  collegeAddress?: string;
+  savedLocations?: SavedUserLocations;
 }
 
 export interface Ride {
@@ -67,6 +101,8 @@ export interface Ride {
   womenOnly?: boolean;
   matchScore?: number;
   matchType?: MatchType;
+  sharedDistanceKm?: number;
+  matchExplanation?: string;
   status: RideStatus;
   co2Saved?: number;
   tags?: string[];

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { Text, StyleSheet, Animated } from 'react-native';
 import { useApp } from '@/src/context/AppContext';
 import { colors, font, spacing } from '@/src/theme/tokens';
 

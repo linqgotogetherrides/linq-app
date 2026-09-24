@@ -5,12 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, Redirect } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
 import PrimaryButton from '@/src/components/PrimaryButton';
-import LocationPickerModal from '@/src/components/LocationPickerModal';
 import TimePickerModal from '@/src/components/TimePickerModal';
 import DatePickerModal from '@/src/components/DatePickerModal';
 import PassengerModal, { PassengerData } from '@/src/components/PassengerModal';
 import Slider from '@react-native-community/slider';
 import { useApp } from '@/src/context/AppContext';
+import { LocationCoordinates } from '@/src/services/locationService';
+import { rideService } from '@/src/services/rideService';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -23,14 +24,73 @@ const DAY_PRESETS = [
 
 export default function CreateRide() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ pickup?: string; destination?: string; type?: string }>();
-  const { user, showToast } = useApp();
+  const params = useLocalSearchParams<{
+    pickup?: string;
+    destination?: string;
+    type?: string;
+    rideType?: string;
+    travelTime?: string;
+    returnTime?: string;
+    travelDate?: string;
+    pickupLatitude?: string;
+    pickupLongitude?: string;
+    pickupAccuracy?: string;
+    pickupTimestamp?: string;
+    destinationLatitude?: string;
+    destinationLongitude?: string;
+    destinationAccuracy?: string;
+    destinationTimestamp?: string;
+  }>();
+  const {
+    user,
+    showToast,
+    locationFlowResult,
+    clearLocationFlowResult,
+  } = useApp();
 
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [rideType, setRideType] = useState<'daily' | 'planned'>(params.rideType && params.rideType !== 'instant' ? params.rideType : 'daily');
-  const [pickup, setPickup] = useState(params.pickup || user?.homeAddress || 'Madhapur, Hyderabad');
-  const [destination, setDestination] = useState(params.destination || '');
+  const [rideType, setRideType] = useState<'daily' | 'planned'>(
+    params.rideType === 'planned' ? 'planned' : 'daily'
+  );
+  const savedDefaultPickup = user?.savedLocations?.defaultPickup;
+  const savedDefaultDrop = user?.savedLocations?.defaultDrop;
+  const [pickup, setPickup] = useState(
+    params.pickup || savedDefaultPickup?.label || user?.homeAddress || ''
+  );
+  const [pickupCoordinates, setPickupCoordinates] = useState<LocationCoordinates | null>(() => {
+    const latitude = Number(params.pickupLatitude);
+    const longitude = Number(params.pickupLongitude);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      return {
+        latitude,
+        longitude,
+        accuracy: Number.isFinite(Number(params.pickupAccuracy)) ? Number(params.pickupAccuracy) : null,
+        timestamp: Number.isFinite(Number(params.pickupTimestamp)) ? Number(params.pickupTimestamp) : undefined,
+      };
+    }
+    return savedDefaultPickup && (!params.pickup || params.pickup === savedDefaultPickup.label)
+      ? { latitude: savedDefaultPickup.latitude, longitude: savedDefaultPickup.longitude }
+      : null;
+  });
+  const [destination, setDestination] = useState(params.destination || savedDefaultDrop?.label || '');
+  const [destinationCoordinates, setDestinationCoordinates] = useState<LocationCoordinates | null>(() => {
+    const latitude = Number(params.destinationLatitude);
+    const longitude = Number(params.destinationLongitude);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      return {
+        latitude,
+        longitude,
+        accuracy: Number.isFinite(Number(params.destinationAccuracy)) ? Number(params.destinationAccuracy) : null,
+        timestamp: Number.isFinite(Number(params.destinationTimestamp)) ? Number(params.destinationTimestamp) : undefined,
+      };
+    }
+    return savedDefaultDrop && (!params.destination || params.destination === savedDefaultDrop.label)
+      ? { latitude: savedDefaultDrop.latitude, longitude: savedDefaultDrop.longitude }
+      : null;
+  });
+  const [routeMetrics, setRouteMetrics] = useState<{
+    distanceMeters?: number;
+    durationSeconds?: number;
+  } | null>(null);
   const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5]);
   const [presetIdx, setPresetIdx] = useState(0);
   const [hasVehicle, setHasVehicle] = useState(false);
@@ -41,6 +101,7 @@ export default function CreateRide() {
   const [model, setModel] = useState('');
   const [plate, setPlate] = useState('');
   const [published, setPublished] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [travelTime, setTravelTime] = useState(params.travelTime || '08:00 AM');
   const [returnTime, setReturnTime] = useState(params.returnTime || '06:00 PM');
   const [travelDate, setTravelDate] = useState(params.travelDate || 'Sat, 24 Aug');
@@ -48,8 +109,26 @@ export default function CreateRide() {
     { name: 'Passenger 1', sub: 'Myself', self: true },
   ]);
 
+  React.useEffect(() => {
+    if (!locationFlowResult || locationFlowResult.source !== 'create-ride') return;
+    setPickup(locationFlowResult.pickup.label);
+    setPickupCoordinates({
+      latitude: locationFlowResult.pickup.latitude,
+      longitude: locationFlowResult.pickup.longitude,
+    });
+    setDestination(locationFlowResult.destination.label);
+    setDestinationCoordinates({
+      latitude: locationFlowResult.destination.latitude,
+      longitude: locationFlowResult.destination.longitude,
+    });
+    setRouteMetrics({
+      distanceMeters: locationFlowResult.distanceMeters,
+      durationSeconds: locationFlowResult.durationSeconds,
+    });
+    clearLocationFlowResult();
+  }, [clearLocationFlowResult, locationFlowResult]);
+
   // Modals
-  const [locPicker, setLocPicker] = useState<null | 'pickup' | 'dest'>(null);
   const [timePicker, setTimePicker] = useState<null | 'travel' | 'return'>(null);
   const [datePicker, setDatePicker] = useState(false);
   const [womenOnlyInfo, setWomenOnlyInfo] = useState(false);
@@ -113,8 +192,71 @@ export default function CreateRide() {
     setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i]));
   };
 
-  const publish = () => {
-    setPublished(true);
+  const openLocationFlow = (entry: 'pickup' | 'drop') => {
+    clearLocationFlowResult();
+    setRouteMetrics(null);
+    router.push({
+      pathname: '/ride-location-flow',
+      params: {
+        source: 'create-ride',
+        entry,
+        rideType,
+        ...(pickup && pickupCoordinates
+          ? {
+              pickup,
+              pickupLatitude: pickupCoordinates.latitude.toString(),
+              pickupLongitude: pickupCoordinates.longitude.toString(),
+            }
+          : {}),
+      },
+    });
+  };
+
+  const publish = async () => {
+    if (!pickup.trim() || !pickupCoordinates) {
+      openLocationFlow('pickup');
+      return;
+    }
+    if (!destination.trim() || !destinationCoordinates) {
+      openLocationFlow('drop');
+      return;
+    }
+
+    setPublishing(true);
+    try {
+      await rideService.createRide({
+        pickup: {
+          label: pickup,
+          address: pickup,
+          lat: pickupCoordinates.latitude,
+          lng: pickupCoordinates.longitude,
+          accuracy: pickupCoordinates.accuracy,
+          timestamp: pickupCoordinates.timestamp,
+        },
+        destination: {
+          label: destination,
+          address: destination,
+          lat: destinationCoordinates.latitude,
+          lng: destinationCoordinates.longitude,
+          accuracy: destinationCoordinates.accuracy,
+          timestamp: destinationCoordinates.timestamp,
+        },
+        type: rideType,
+        time: travelTime,
+        returnTime,
+        date: travelDate,
+        days: days.map((day) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day]),
+        pricePerSeat: price,
+        seatsTotal: Math.max(1, passengers.length),
+        seatsAvailable: Math.max(0, passengers.length - 1),
+        womenOnly,
+      });
+      setPublished(true);
+    } catch {
+      showToast('Could not publish the ride. Please try again.');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   if (!user) {
@@ -162,22 +304,51 @@ export default function CreateRide() {
                 <View style={[styles.dot, { backgroundColor: colors.error, borderRadius: 2 }]} />
               </View>
               <View style={{ flex: 1 }}>
-                <View style={styles.locField}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.fieldLabel}>Your Location</Text>
-                    <Text style={styles.fieldVal}>{user.homeAddress}</Text>
+                <Pressable
+                  style={styles.routeField}
+                  testID="create-pickup-input"
+                  onPress={() => openLocationFlow('pickup')}
+                >
+                  <Text style={styles.routeFieldLabel}>PICKUP LOCATION</Text>
+                  <View style={styles.routeFieldValueRow}>
+                    <Text
+                      style={[styles.routeFieldValue, !pickup && styles.routeFieldPlaceholder]}
+                      numberOfLines={1}
+                    >
+                      {pickup || 'Choose pickup location'}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
                   </View>
-                  <Pressable style={styles.trackLive} testID="create-track-live" onPress={() => showToast('Live tracking enabled')}><Ionicons name="navigate" size={12} color={colors.primary} /><Text style={styles.trackText}>Track Live</Text></Pressable>
-                </View>
+                </Pressable>
                 <View style={styles.divider} />
-                <View style={styles.locField}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.fieldLabel}>Destination</Text>
-                    <TextInput testID="create-destination" value={destination} onChangeText={setDestination} placeholder="Where are you going?" placeholderTextColor={colors.textTertiary} style={styles.fieldInput} />
+                <Pressable
+                  style={styles.routeField}
+                  testID="create-destination"
+                  onPress={() => openLocationFlow('drop')}
+                >
+                  <Text style={styles.routeFieldLabel}>DROP LOCATION</Text>
+                  <View style={styles.routeFieldValueRow}>
+                    <Text
+                      style={[styles.routeFieldValue, !destination && styles.routeFieldPlaceholder]}
+                      numberOfLines={1}
+                    >
+                      {destination || 'Where are you going?'}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
                   </View>
-                </View>
+                </Pressable>
               </View>
             </View>
+
+            {routeMetrics && (
+              <View style={styles.routeReady} testID="create-route-ready">
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.routeReadyTitle}>Route ready</Text>
+                  <Text style={styles.routeReadyMeta}>Pickup and drop confirmed</Text>
+                </View>
+              </View>
+            )}
 
             {rideType === 'daily' ? (
               <View style={{ marginTop: spacing.lg }}>
@@ -339,7 +510,13 @@ export default function CreateRide() {
         </ScrollView>
 
         <View style={styles.footer}>
-          <PrimaryButton testID="publish-ride-button" title="Publish Ride" onPress={publish} />
+          <PrimaryButton
+            testID="publish-ride-button"
+            title={publishing ? 'Publishing...' : 'Publish Ride'}
+            loading={publishing}
+            disabled={publishing}
+            onPress={publish}
+          />
           <View style={{ height: spacing.sm }} />
           <PrimaryButton testID="save-draft-button" title="Save as Draft" variant="secondary" onPress={() => { showToast('Saved as draft'); router.replace('/(tabs)'); }} />
         </View>
@@ -401,13 +578,15 @@ const styles = StyleSheet.create({
   routeLine: { alignItems: 'center', marginRight: spacing.md, paddingTop: 14 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   vline: { width: 2, flex: 1, backgroundColor: colors.border, marginVertical: 4 },
-  locField: { flexDirection: 'row', alignItems: 'center' },
-  fieldLabel: { fontSize: font.size.xs, color: colors.textTertiary },
-  fieldVal: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium, marginTop: 2 },
-  fieldInput: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium, padding: 0, marginTop: 2, height: 22 },
-  trackLive: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  trackText: { fontSize: font.size.xs, color: colors.primary, fontWeight: font.weight.medium },
+  routeField: { minHeight: 52, justifyContent: 'center' },
+  routeFieldLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: font.weight.bold, letterSpacing: 0.5 },
+  routeFieldValueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 3 },
+  routeFieldValue: { flex: 1, color: colors.textPrimary, fontSize: font.size.base, fontWeight: font.weight.medium },
+  routeFieldPlaceholder: { color: colors.textTertiary, fontWeight: font.weight.regular },
   divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
+  routeReady: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.successLight },
+  routeReadyTitle: { color: colors.success, fontSize: font.size.sm, fontWeight: font.weight.bold },
+  routeReadyMeta: { marginTop: 2, color: colors.textSecondary, fontSize: font.size.xs },
 
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   smallLabel: { fontSize: font.size.sm, color: colors.textSecondary },

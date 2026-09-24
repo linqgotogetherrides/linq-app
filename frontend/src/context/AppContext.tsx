@@ -1,7 +1,13 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { AccessState, User } from '@/src/types';
+import React, { createContext, useContext, useState, useCallback } from 'react';
+import type {
+  AccessState,
+  LocationFlowResult,
+  SavedLocation,
+  SavedLocationType,
+  SavedUserLocations,
+  User,
+} from '@/src/types';
 import { supabase } from '@/src/lib/supabase';
-import { currentUser as mockUser } from '@/src/mock/data';
 
 interface AppContextValue {
   user: User | null;
@@ -13,7 +19,7 @@ interface AppContextValue {
   access: AccessState;
   useRequest: () => boolean;
   useChat: () => boolean;
-  upgradePlan: (plan: 'weekly' | 'monthly') => void;
+  upgradePlan: (plan: 'yearly' | 'twoYear') => void;
   singleUnlock: () => void;
   walletBalance: number;
   rewardBalance: number;
@@ -23,6 +29,14 @@ interface AppContextValue {
   showToast: (m: string) => void;
   fetchUserProfile: (uid: string) => Promise<User | null>;
   refreshUser: () => Promise<void>;
+  saveUserLocation: (
+    type: SavedLocationType,
+    location: SavedLocation,
+    role: 'pickup' | 'drop'
+  ) => Promise<boolean>;
+  locationFlowResult: LocationFlowResult | null;
+  setLocationFlowResult: (result: LocationFlowResult) => void;
+  clearLocationFlowResult: () => void;
 }
 
 const defaultAccess: AccessState = {
@@ -31,6 +45,47 @@ const defaultAccess: AccessState = {
   plan: 'free',
 };
 
+function normalizeSavedLocation(value: unknown): SavedLocation | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Partial<SavedLocation>;
+  if (
+    typeof candidate.label !== 'string' ||
+    typeof candidate.address !== 'string' ||
+    !Number.isFinite(candidate.latitude) ||
+    !Number.isFinite(candidate.longitude)
+  ) {
+    return undefined;
+  }
+
+  return {
+    label: candidate.label,
+    address: candidate.address,
+    latitude: candidate.latitude as number,
+    longitude: candidate.longitude as number,
+    updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : undefined,
+  };
+}
+
+function normalizeSavedLocations(value: unknown): SavedUserLocations {
+  let parsed = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') return {};
+  const saved = parsed as Partial<SavedUserLocations>;
+  return {
+    home: normalizeSavedLocation(saved.home),
+    office: normalizeSavedLocation(saved.office),
+    college: normalizeSavedLocation(saved.college),
+    defaultPickup: normalizeSavedLocation(saved.defaultPickup),
+    defaultDrop: normalizeSavedLocation(saved.defaultDrop),
+  };
+}
+
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -38,14 +93,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isAuthed, setIsAuthed] = useState(false);
   const [confirmResult, setConfirmResult] = useState<any>(null);
   const [access, setAccess] = useState<AccessState>(defaultAccess);
-  const [walletBalance, setWalletBalance] = useState(1250);
-  const [rewardBalance, setRewardBalance] = useState(35);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [rewardBalance, setRewardBalance] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
+  const [locationFlowResult, setLocationFlowResult] = useState<LocationFlowResult | null>(null);
 
   const showToast = useCallback((m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 2200);
   }, []);
+
+  const clearLocationFlowResult = useCallback(() => {
+    setLocationFlowResult(null);
+  }, []);
+
+  const saveUserLocation = useCallback(async (
+    type: SavedLocationType,
+    location: SavedLocation,
+    role: 'pickup' | 'drop'
+  ): Promise<boolean> => {
+    if (!user) {
+      showToast('Sign in to save this location for quick access.');
+      return false;
+    }
+
+    const savedLocation: SavedLocation = {
+      ...location,
+      updatedAt: new Date().toISOString(),
+    };
+    const currentSaved = user.savedLocations || {};
+    const nextSaved: SavedUserLocations = {
+      ...currentSaved,
+      [type]: savedLocation,
+      [role === 'pickup' ? 'defaultPickup' : 'defaultDrop']: savedLocation,
+    };
+    const legacyAddressField =
+      type === 'home' ? 'home_address' : type === 'office' ? 'office_address' : 'college_address';
+
+    try {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          saved_locations: nextSaved,
+          [legacyAddressField]: savedLocation.address,
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+    } catch {
+      showToast('Location selected, but it could not be saved to your profile.');
+      return false;
+    }
+
+    setUser({
+      ...user,
+      homeAddress: type === 'home' ? savedLocation.address : user.homeAddress,
+      officeAddress: type === 'office' ? savedLocation.address : user.officeAddress,
+      collegeAddress: type === 'college' ? savedLocation.address : user.collegeAddress,
+      savedLocations: nextSaved,
+    });
+    showToast(`${type[0].toUpperCase()}${type.slice(1)} saved for quick access`);
+    return true;
+  }, [showToast, user]);
 
   const fetchUserProfile = async (uid: string): Promise<User | null> => {
     try {
@@ -77,6 +186,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         emergencyContact: data.emergency_contact || undefined,
         homeAddress: data.home_address || undefined,
         officeAddress: data.office_address || undefined,
+        collegeAddress: data.college_address || undefined,
+        savedLocations: normalizeSavedLocations(data.saved_locations),
       };
       
       setUser(mappedUser);
@@ -108,9 +219,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, [access.plan, access.freeChatsRemaining]);
 
-  const upgradePlan = useCallback((plan: 'weekly' | 'monthly') => {
+  const upgradePlan = useCallback((plan: 'yearly' | 'twoYear') => {
     setAccess({ plan, freeRequestsRemaining: 5, freeChatsRemaining: 5 });
-    showToast(`${plan === 'weekly' ? 'Weekly' : 'Monthly'} plan activated`);
+    showToast(`${plan === 'yearly' ? 'Yearly' : '2 Year'} plan activated`);
   }, [showToast]);
 
   const singleUnlock = useCallback(() => {
@@ -126,14 +237,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRewardBalance((b) => Math.max(0, b - amount));
   }, []);
 
-  // For development fallback to avoid breaking UI that expects a user
-  // This will be replaced as we tighten auth logic
-  useEffect(() => {
-    if (!user && !isAuthed) {
-      // Temporarily default to mockUser if no auth state to not break tabs
-      setUser(mockUser);
-    }
-  }, [user, isAuthed]);
+
 
   return (
     <AppContext.Provider
@@ -141,7 +245,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         user, setUser, isAuthed, setIsAuthed, confirmResult, setConfirmResult,
         access, useRequest, useChat, upgradePlan, singleUnlock,
         walletBalance, rewardBalance, addToWallet, spendReward,
-        toast, showToast, fetchUserProfile, refreshUser
+        toast, showToast, fetchUserProfile, refreshUser,
+        saveUserLocation, locationFlowResult, setLocationFlowResult, clearLocationFlowResult
       }}
     >
       {children}

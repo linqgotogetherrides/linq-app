@@ -47,6 +47,7 @@ export default function PersonalInfo() {
   const [email, setEmail] = useState(user?.email || '');
   const [home, setHome] = useState(user?.homeAddress || '');
   const [office, setOffice] = useState(user?.officeAddress || '');
+  const [college, setCollege] = useState(user?.collegeAddress || '');
   const [emergency, setEmergency] = useState(user?.emergencyContact || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl);
   const [loading, setLoading] = useState(false);
@@ -59,6 +60,7 @@ export default function PersonalInfo() {
       setEmail(user.email || '');
       setHome(user.homeAddress || '');
       setOffice(user.officeAddress || '');
+      setCollege(user.collegeAddress || '');
       setEmergency(user.emergencyContact || '');
       setAvatarUrl(user.avatarUrl);
     }
@@ -98,13 +100,14 @@ export default function PersonalInfo() {
         email,
         home_address: home,
         office_address: office,
+        college_address: college,
         emergency_contact: emergency,
         avatar_url: avatarUrl,
       }).eq('id', user.id);
 
       if (error) throw error;
 
-      setUser({ ...user, name, bio, phone, email, homeAddress: home, officeAddress: office, emergencyContact: emergency, avatarUrl });
+      setUser({ ...user, name, bio, phone, email, homeAddress: home, officeAddress: office, collegeAddress: college, emergencyContact: emergency, avatarUrl });
       showToast('Profile updated');
     } catch (e: any) {
       showToast(e.message || 'Failed to save changes');
@@ -129,6 +132,7 @@ export default function PersonalInfo() {
           <Field label="Email" value={email} onChange={setEmail} placeholder="Email address" keyboardType="email-address" testID="pi-email" />
           <Field label="Home Address" value={home} onChange={setHome} placeholder="Home address" testID="pi-home" />
           <Field label="Office Address" value={office} onChange={setOffice} placeholder="Office address" testID="pi-office" />
+          <Field label="College Address" value={college} onChange={setCollege} placeholder="College address" testID="pi-college" />
           <Field label="Emergency Contact" value={emergency} onChange={setEmergency} placeholder="Emergency contact" keyboardType="phone-pad" testID="pi-emergency" isPhone />
 
           <PrimaryButton testID="save-profile" title={loading ? "Saving..." : "Save Changes"} onPress={save} disabled={loading} />

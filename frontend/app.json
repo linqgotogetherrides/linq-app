@@ -47,8 +47,9 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Linq to use your location to match you with nearby rides.",
-          "locationWhenInUsePermission": "Allow Linq to use your location to show nearby pickups and track your ride."
+          "locationWhenInUsePermission": "Allow Linq to use your precise location to set pickup points and find rides along your route.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
         }
       ],
       [

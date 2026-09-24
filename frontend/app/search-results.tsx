@@ -26,26 +26,85 @@ const FILTERS = [
 export default function SearchResults() {
   const router = useRouter();
   const { user } = useApp();
-  const params = useLocalSearchParams<{ pickup?: string; destination?: string; type?: string }>();
+  const params = useLocalSearchParams<{
+    pickup?: string;
+    destination?: string;
+    type?: string;
+    travelTime?: string;
+    pickupLatitude?: string;
+    pickupLongitude?: string;
+    pickupAccuracy?: string;
+    pickupTimestamp?: string;
+    destinationLatitude?: string;
+    destinationLongitude?: string;
+    destinationAccuracy?: string;
+    destinationTimestamp?: string;
+  }>();
   const [rides, setRides] = useState<Ride[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  const [tab, setTab] = useState('riders');
   const sheetRef = useRef<BottomSheet>(null);
+  const loadRequestId = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setError(false);
     try {
-      const data = await rideService.getRides({ pickup: params.pickup, destination: params.destination });
-      setRides(data);
+      const pickupLatitude = Number(params.pickupLatitude);
+      const pickupLongitude = Number(params.pickupLongitude);
+      const destinationLatitude = Number(params.destinationLatitude);
+      const destinationLongitude = Number(params.destinationLongitude);
+      const pickupAccuracy = Number(params.pickupAccuracy);
+      const pickupTimestamp = Number(params.pickupTimestamp);
+      const destinationAccuracy = Number(params.destinationAccuracy);
+      const destinationTimestamp = Number(params.destinationTimestamp);
+      const pickupCoordinates = Number.isFinite(pickupLatitude) && Number.isFinite(pickupLongitude)
+        ? {
+            latitude: pickupLatitude,
+            longitude: pickupLongitude,
+            accuracy: Number.isFinite(pickupAccuracy) ? pickupAccuracy : null,
+            timestamp: Number.isFinite(pickupTimestamp) ? pickupTimestamp : undefined,
+          }
+        : undefined;
+      const destinationCoordinates = Number.isFinite(destinationLatitude) && Number.isFinite(destinationLongitude)
+        ? {
+            latitude: destinationLatitude,
+            longitude: destinationLongitude,
+            accuracy: Number.isFinite(destinationAccuracy) ? destinationAccuracy : null,
+            timestamp: Number.isFinite(destinationTimestamp) ? destinationTimestamp : undefined,
+          }
+        : undefined;
+
+      const data = await rideService.getRides({
+        pickup: params.pickup,
+        destination: params.destination,
+        type: params.type as Ride['type'] | undefined,
+        time: params.travelTime,
+        pickupCoordinates,
+        destinationCoordinates,
+      });
+      if (requestId === loadRequestId.current) setRides(data);
     } catch {
-      setError(true);
+      if (requestId === loadRequestId.current) setError(true);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) setLoading(false);
     }
-  }, [params.pickup, params.destination]);
+  }, [
+    params.destination,
+    params.destinationAccuracy,
+    params.destinationLatitude,
+    params.destinationLongitude,
+    params.destinationTimestamp,
+    params.pickup,
+    params.pickupAccuracy,
+    params.pickupLatitude,
+    params.pickupLongitude,
+    params.pickupTimestamp,
+    params.travelTime,
+    params.type,
+  ]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -126,7 +185,23 @@ export default function SearchResults() {
             if (!user) {
               router.push('/onboarding');
             } else {
-              router.push('/create-ride');
+              router.push({
+                pathname: '/create-ride',
+                params: {
+                  pickup: params.pickup,
+                  destination: params.destination,
+                  rideType: params.type,
+                  travelTime: params.travelTime,
+                  pickupLatitude: params.pickupLatitude,
+                  pickupLongitude: params.pickupLongitude,
+                  pickupAccuracy: params.pickupAccuracy,
+                  pickupTimestamp: params.pickupTimestamp,
+                  destinationLatitude: params.destinationLatitude,
+                  destinationLongitude: params.destinationLongitude,
+                  destinationAccuracy: params.destinationAccuracy,
+                  destinationTimestamp: params.destinationTimestamp,
+                },
+              });
             }
           }} 
         />

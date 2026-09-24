@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tabs, useRouter, Redirect } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, shadow } from '@/src/theme/tokens';

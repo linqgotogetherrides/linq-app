@@ -35,42 +35,40 @@ export default function Pricing() {
           </View>
         </View>
 
-        <Text style={styles.afterNote}>After that, you&apos;ll get 1 free request and 1 free chat per day.</Text>
-
         <View style={styles.planHeader}>
           <Text style={styles.sectionTitle}>Choose a Plan</Text>
           <View style={styles.secureRow}><Ionicons name="lock-closed" size={12} color={colors.textSecondary} /><Text style={styles.secureText}>Secure payments</Text></View>
         </View>
 
         <View style={styles.plansRow}>
-          {/* Weekly */}
+          {/* Yearly */}
           <View style={[styles.planCard, styles.planPopular]}>
             <View style={styles.popularBadge}><Text style={styles.popularText}>Most Popular</Text></View>
-            <Text style={styles.planName}>Weekly Plan</Text>
-            <Text style={styles.planPrice}>₹19</Text>
-            <Text style={styles.planValidity}>Valid for 7 days</Text>
+            <Text style={styles.planName}>Yearly Plan</Text>
+            <Text style={styles.planPrice}>₹199/-</Text>
+            <Text style={styles.planValidity}>Valid for 1 year</Text>
             <View style={styles.planDivider} />
             <PlanFeature text="5 Requests per day" />
             <PlanFeature text="5 Chats per day" />
-            <PlanFeature text="Valid for 7 days" />
+            <PlanFeature text="Valid for 1 year" />
             <PlanFeature text="Cancel anytime" />
-            <Pressable testID="get-weekly-plan" style={styles.planBtn} onPress={() => upgradePlan('weekly')}>
-              <Text style={styles.planBtnText}>Get Weekly Plan</Text>
+            <Pressable testID="get-yearly-plan" style={styles.planBtn} onPress={() => upgradePlan('yearly')}>
+              <Text style={styles.planBtnText}>Get Yearly Plan</Text>
             </Pressable>
           </View>
 
-          {/* Monthly */}
+          {/* 2 Year */}
           <View style={styles.planCard}>
-            <Text style={styles.planName}>Monthly Plan</Text>
-            <Text style={styles.planPrice}>₹49</Text>
-            <Text style={styles.planValidity}>Valid for 30 days</Text>
+            <Text style={styles.planName}>2 Year Plan</Text>
+            <Text style={styles.planPrice}>₹249/-</Text>
+            <Text style={styles.planValidity}>Valid for 2 years</Text>
             <View style={styles.planDivider} />
             <PlanFeature text="5 Requests per day" />
             <PlanFeature text="5 Chats per day" />
-            <PlanFeature text="Valid for 30 days" />
+            <PlanFeature text="Valid for 2 years" />
             <PlanFeature text="Cancel anytime" />
-            <Pressable testID="get-monthly-plan" style={[styles.planBtn, styles.planBtnOutline]} onPress={() => upgradePlan('monthly')}>
-              <Text style={[styles.planBtnText, { color: colors.primary }]}>Get Monthly Plan</Text>
+            <Pressable testID="get-2year-plan" style={[styles.planBtn, styles.planBtnOutline]} onPress={() => upgradePlan('twoYear')}>
+              <Text style={[styles.planBtnText, { color: colors.primary }]}>Get 2 Year Plan</Text>
             </Pressable>
           </View>
         </View>
@@ -151,8 +149,6 @@ const styles = StyleSheet.create({
   earlyStatText: { fontSize: font.size.sm, color: colors.textPrimary, fontWeight: font.weight.medium },
   freeBadge: { marginLeft: 'auto', backgroundColor: colors.successLight, paddingHorizontal: spacing.md, height: 26, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   freeText: { fontSize: font.size.xs, color: colors.success, fontWeight: font.weight.medium, letterSpacing: 0.5 },
-
-  afterNote: { fontSize: font.size.sm, color: colors.textSecondary, marginTop: spacing.md, textAlign: 'center' },
 
   planHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.xl, marginBottom: spacing.md },
   sectionTitle: { fontSize: font.size.lg, color: colors.textPrimary, fontWeight: font.weight.medium, marginTop: spacing.xl, marginBottom: spacing.md },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,33 +6,128 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
 import PrimaryButton from '@/src/components/PrimaryButton';
+import LeafletMap from '@/src/components/LeafletMap';
 import { useApp } from '@/src/context/AppContext';
-import { mockRides } from '@/src/mock/data';
+import { useCurrentLocation } from '@/src/hooks/useCurrentLocation';
+import { rideService } from '@/src/services/rideService';
+import { Ride } from '@/src/types';
+import { fetchOSRMRoute, RouteGeometry } from '@/src/lib/routing/osrm';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
+
+function getRideCoordinates(place: {
+  lat?: number;
+  lng?: number;
+  latitude?: number;
+  longitude?: number;
+}) {
+  const latitude = place.lat ?? place.latitude;
+  const longitude = place.lng ?? place.longitude;
+  if (
+    typeof latitude !== 'number' ||
+    typeof longitude !== 'number' ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+    return null;
+  }
+  return { latitude, longitude };
+}
 
 export default function RideDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user, useRequest: consumeRequest, showToast } = useApp();
-  const ride = mockRides.find((r) => r.id === id) ?? mockRides[0];
+  const {
+    location: currentLocation,
+    isLoading: isLocating,
+    requestLocation: requestCurrentLocation,
+  } = useCurrentLocation({ autoLoad: true });
+  const [ride, setRide] = useState<Ride | null>(null);
   const [requested, setRequested] = useState(false);
+  const [routeGeometry, setRouteGeometry] = useState<RouteGeometry | undefined>();
+  const [centerOnCurrentLocation, setCenterOnCurrentLocation] = useState(false);
+  const initialLocationCenteredRef = useRef(false);
+
+  useEffect(() => {
+    if (currentLocation && !initialLocationCenteredRef.current) {
+      initialLocationCenteredRef.current = true;
+      setCenterOnCurrentLocation(true);
+    }
+  }, [currentLocation]);
+
+  useEffect(() => {
+    if (!centerOnCurrentLocation) return;
+    const timer = setTimeout(() => setCenterOnCurrentLocation(false), 500);
+    return () => clearTimeout(timer);
+  }, [centerOnCurrentLocation, currentLocation]);
+
+  useEffect(() => {
+    (async () => {
+      if (id) {
+        const fetched = await rideService.getRideById(id);
+        if (fetched) {
+          setRide(fetched);
+          const pickup = getRideCoordinates(fetched.pickup);
+          const destination = getRideCoordinates(fetched.destination);
+          if (!pickup || !destination) return;
+
+          try {
+            const routeRes = await fetchOSRMRoute(pickup, destination);
+            if (routeRes.source === 'road') setRouteGeometry(routeRes.geometry);
+          } catch (err) {
+            console.warn('Failed to load OSRM geometry:', err);
+          }
+        }
+      }
+    })();
+  }, [id]);
+
+  if (!ride) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']} testID="ride-details-screen">
+        <LinqHeader title="Ride Details" />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl }}>
+          <Text style={{ fontSize: font.size.base, color: colors.textSecondary }}>Ride details unavailable or expired.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const pickupCoords = getRideCoordinates(ride.pickup);
+  const dropCoords = getRideCoordinates(ride.destination);
 
   const onRequest = () => {
     if (!user) {
       router.push('/onboarding');
       return;
     }
-    if (requested) { setRequested(false); showToast('Request cancelled'); return; }
+    if (requested) {
+      setRequested(false);
+      showToast('Request cancelled');
+      return;
+    }
     const ok = consumeRequest();
-    if (!ok) { router.push('/pricing'); return; }
+    if (!ok) {
+      router.push('/pricing');
+      return;
+    }
     setRequested(true);
     showToast('Request sent to ' + ride.creator.name);
   };
+
+  const handleLocate = async () => {
+    const current = await requestCurrentLocation({ showRationale: true });
+    if (current) setCenterOnCurrentLocation(true);
+  };
+
+  const sharedDistanceKm = ride.sharedDistanceKm;
+  const matchExplanation = ride.matchExplanation || 'Route match is not available for this ride.';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="ride-details-screen">
       <LinqHeader title="Ride Details" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.xl, paddingBottom: 120 }}>
+        {/* Rider Profile Card */}
         <View style={styles.profileCard}>
           <Image source={{ uri: ride.creator.avatarUrl }} style={styles.avatar} contentFit="cover" />
           <View style={{ flex: 1, marginLeft: spacing.md }}>
@@ -42,7 +137,7 @@ export default function RideDetails() {
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
               <Ionicons name="star" size={13} color={colors.yellow} />
-              <Text style={styles.meta}>  {ride.creator.rating} • {ride.creator.trips} trips</Text>
+              <Text style={styles.meta}> {ride.creator.rating} • {ride.creator.trips} trips</Text>
             </View>
           </View>
           <View style={[styles.typeTag, { backgroundColor: colors.primaryLight }]}>
@@ -50,6 +145,60 @@ export default function RideDetails() {
           </View>
         </View>
 
+        {/* Interactive Leaflet Map Preview */}
+        <View style={{ marginTop: spacing.md }}>
+          <View style={styles.mapHeader}>
+            <Text style={styles.mapHeaderText}>Route map</Text>
+            <Pressable
+              style={styles.locateButton}
+              onPress={handleLocate}
+              disabled={isLocating}
+              testID="ride-locate-me"
+            >
+              <Ionicons name="locate" size={16} color={colors.primary} />
+              <Text style={styles.locateText}>{isLocating ? 'Locating...' : 'Locate Me'}</Text>
+            </Pressable>
+          </View>
+          {pickupCoords && dropCoords ? (
+            <LeafletMap
+              pickup={pickupCoords}
+              destination={dropCoords}
+              driverRoute={routeGeometry}
+              pickupLabel={ride.pickup.label}
+              destinationLabel={ride.destination.label}
+              currentLocation={currentLocation || undefined}
+              centerOnCurrentLocation={centerOnCurrentLocation}
+              allowStraightLineFallback={false}
+              height={240}
+            />
+          ) : (
+            <View style={styles.mapUnavailable}>
+              <Ionicons name="location-outline" size={22} color={colors.textSecondary} />
+              <Text style={styles.mapUnavailableText}>
+                Map unavailable because this ride has no stored coordinates.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Route Match Badge Card */}
+        <View style={styles.matchBanner}>
+          <View style={styles.matchBadge}>
+            <Ionicons name="sparkles" size={14} color={colors.textInverse} />
+            <Text style={styles.matchBadgeText}>
+              {ride.matchScore != null ? `${ride.matchScore}% Route Match` : 'Route Match Unavailable'}
+            </Text>
+          </View>
+          <Text style={styles.matchExplanation}>{matchExplanation}</Text>
+          {sharedDistanceKm != null && (
+            <View style={styles.sharedDistanceTag}>
+              <Ionicons name="git-commit" size={14} color={colors.primary} />
+              <Text style={styles.sharedDistanceText}>{sharedDistanceKm} km shared corridor</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Route Pickup & Drop Card */}
         <View style={styles.card}>
           <View style={styles.routeRow}>
             <View style={styles.routeLine}>
@@ -77,8 +226,9 @@ export default function RideDetails() {
           </View>
         </View>
 
+        {/* Key Info Grid */}
         <View style={styles.infoGrid}>
-          <InfoBox icon="navigate" label="Distance" value={`${ride.distanceKm ?? 8} km`} />
+          <InfoBox icon="navigate" label="Distance" value={`${ride.distanceKm ?? 8.4} km`} />
           <InfoBox icon="people" label="Seats" value={`${ride.seatsAvailable}/${ride.seatsTotal}`} />
           <InfoBox icon="cash" label="Per seat" value={`₹${ride.pricePerSeat.toFixed(0)}`} color={colors.primary} />
         </View>
@@ -95,7 +245,9 @@ export default function RideDetails() {
             <Text style={styles.sectionTitle}>Vehicle</Text>
             <View style={styles.card}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                <View style={styles.vehicleIcon}><Ionicons name={ride.vehicle.kind === 'bike' ? 'bicycle' : 'car-sport'} size={24} color={colors.primary} /></View>
+                <View style={styles.vehicleIcon}>
+                  <Ionicons name={ride.vehicle.kind === 'bike' ? 'bicycle' : 'car-sport'} size={24} color={colors.primary} />
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.vehicleModel}>{ride.vehicle.model}{ride.vehicle.ac ? ' • AC' : ''}</Text>
                   <Text style={styles.vehiclePlate}>{ride.vehicle.numberPlate}</Text>
@@ -108,12 +260,13 @@ export default function RideDetails() {
 
         <Text style={styles.sectionTitle}>Safety</Text>
         <View style={styles.card}>
-          <SafetyRow icon="shield-checkmark" text="Identity verified" />
-          <SafetyRow icon="star" text={`${ride.creator.rating} rating from ${ride.creator.trips} trips`} />
+          <SafetyRow icon="shield-checkmark" text="Identity verified profile" />
+          <SafetyRow icon="star" text={`${ride.creator.rating} rating from ${ride.creator.trips} verified trips`} />
           <SafetyRow icon="call" text="Emergency contact available during ride" last />
         </View>
       </ScrollView>
 
+      {/* Sticky Bottom Primary CTA */}
       <View style={styles.footer}>
         <View style={{ flex: 1 }}>
           <PrimaryButton
@@ -150,12 +303,78 @@ function SafetyRow({ icon, text, last }: { icon: keyof typeof Ionicons.glyphMap;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surfaceSecondary },
+  mapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  mapHeaderText: {
+    color: colors.textPrimary,
+    fontSize: font.size.base,
+    fontWeight: font.weight.medium,
+  },
+  locateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryLight,
+  },
+  locateText: {
+    color: colors.primary,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.medium,
+  },
+  mapUnavailable: {
+    height: 240,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+  },
+  mapUnavailableText: {
+    color: colors.textSecondary,
+    fontSize: font.size.sm,
+    textAlign: 'center',
+  },
   profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, ...shadow.sm },
   avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.surfaceSecondary },
   name: { fontSize: font.size.lg, color: colors.textPrimary, fontWeight: font.weight.medium },
   meta: { fontSize: font.size.sm, color: colors.textSecondary },
   typeTag: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: 6 },
   typeText: { fontSize: 10, fontWeight: font.weight.medium, letterSpacing: 0.5 },
+
+  matchBanner: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    ...shadow.sm,
+  },
+  matchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    marginBottom: spacing.xs,
+  },
+  matchBadgeText: { color: colors.textInverse, fontSize: font.size.xs, fontWeight: font.weight.bold },
+  matchExplanation: { fontSize: font.size.sm, color: colors.textPrimary, fontWeight: font.weight.medium },
+  sharedDistanceTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs },
+  sharedDistanceText: { fontSize: font.size.xs, color: colors.primary, fontWeight: font.weight.bold },
 
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.md, borderWidth: 1, borderColor: colors.border },
   routeRow: { flexDirection: 'row' },
@@ -187,5 +406,4 @@ const styles = StyleSheet.create({
   safetyText: { fontSize: font.size.base, color: colors.textPrimary },
 
   footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface },
-  contactBtn: { width: 52, height: 52, borderRadius: 26, borderWidth: 1.5, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
 });

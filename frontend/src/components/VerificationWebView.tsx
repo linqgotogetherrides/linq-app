@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, Modal, Pressable, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radius } from '@/src/theme/tokens';
+import { colors, spacing } from '@/src/theme/tokens';
 
 interface Props {
   visible: boolean;

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import PrimaryButton from './PrimaryButton';
-import { colors, spacing, font, radius } from '@/src/theme/tokens';
+import { colors, spacing, font } from '@/src/theme/tokens';
 
 interface Props {
   icon: keyof typeof Ionicons.glyphMap;

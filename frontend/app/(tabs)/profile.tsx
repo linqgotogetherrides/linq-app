@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
+import { signOut } from '@/src/lib/auth';
 import GuestPrompt from '@/src/components/GuestPrompt';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
@@ -42,8 +43,6 @@ const sections: { title: string; rows: Row[] }[] = [
   },
 ];
 
-import auth from '@react-native-firebase/auth';
-
 export default function Profile() {
   const router = useRouter();
   const { user, setUser, setIsAuthed } = useApp();
@@ -67,7 +66,7 @@ export default function Profile() {
 
   const handleLogout = async () => {
     try {
-      await auth().signOut();
+      await signOut();
     } catch (e) {
       console.log('Firebase signout error:', e);
     }

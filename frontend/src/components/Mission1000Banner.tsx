@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
 // Mission1000 banner styled illustration (approximation, no external asset needed)

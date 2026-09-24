@@ -35,9 +35,14 @@ export default function RideCard({ ride, onRequest }: Props) {
     }
   };
 
-  const matchVariant = ride.matchType === 'exact' ? 'exact' : ride.matchType === 'nearby' ? 'nearby' : 'default';
-  const matchLabel = ride.matchType === 'exact' ? 'EXACT ROUTE' : ride.matchType === 'nearby' ? 'NEARBY MATCH' : 'OTHER';
-  const secondaryTag = ride.vehicle?.kind === 'car' ? 'EV CAR' : ride.vehicle?.kind === 'bike' ? 'BIKE' : !ride.vehicle ? 'NO VEHICLE' : 'AUTO';
+  const matchScoreVal = ride.matchScore;
+  const matchVariant = matchScoreVal != null && matchScoreVal >= 75
+    ? 'exact'
+    : matchScoreVal != null && matchScoreVal >= 40
+      ? 'nearby'
+      : 'default';
+  const matchLabel = matchScoreVal != null ? `${matchScoreVal}% MATCH` : 'MATCH PENDING';
+  const secondaryTag = ride.vehicle?.kind === 'car' ? 'CAR' : ride.vehicle?.kind === 'bike' ? 'BIKE' : !ride.vehicle ? 'WALK / BUS' : 'AUTO';
 
   return (
     <Pressable
@@ -50,17 +55,20 @@ export default function RideCard({ ride, onRequest }: Props) {
         <View style={{ flex: 1 }}>
           <View style={styles.nameRow}>
             <Text style={styles.name}>{ride.creator.name}</Text>
-            <View style={[styles.typeTag, ride.type === 'instant' ? styles.instant : ride.type === 'daily' ? styles.daily : styles.planned]}>
-              <Text style={[styles.typeText, { color: ride.type === 'instant' ? colors.primary : ride.type === 'daily' ? colors.warning : colors.info }]}>{ride.type.toUpperCase()}</Text>
+            {ride.creator.verification === 'verified' && (
+              <Ionicons name="shield-checkmark" size={14} color={colors.success} style={{ marginRight: 4 }} />
+            )}
+            <View style={[styles.typeTag, ride.type === 'daily' ? styles.daily : styles.planned]}>
+              <Text style={[styles.typeText, { color: ride.type === 'daily' ? colors.warning : colors.info }]}>{ride.type.toUpperCase()}</Text>
             </View>
           </View>
           <View style={styles.metaRow}>
             <Ionicons name="star" size={12} color={colors.yellow} />
-            <Text style={styles.meta}>  {ride.creator.rating} • {ride.creator.gender === 'female' ? 'Female' : 'Male'} • {ride.creator.trips} trips</Text>
+            <Text style={styles.meta}> {ride.creator.rating} • {ride.creator.gender === 'female' ? 'Female' : 'Male'} • {ride.creator.trips} trips</Text>
           </View>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={styles.price}>₹{ride.pricePerSeat.toFixed(2)}</Text>
+          <Text style={styles.price}>₹{ride.pricePerSeat.toFixed(0)}</Text>
           <Text style={styles.priceLabel}>PER SEAT</Text>
         </View>
       </View>
@@ -78,7 +86,7 @@ export default function RideCard({ ride, onRequest }: Props) {
           </View>
           <View style={[styles.routeItem, { marginTop: spacing.sm }]}>
             <Text style={styles.routeText}>{ride.destination.label}</Text>
-            <Text style={styles.seats}>{ride.seatsAvailable} seats available</Text>
+            <Text style={styles.seats}>{ride.seatsAvailable} seats left</Text>
           </View>
         </View>
       </View>
@@ -119,7 +127,6 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center' },
   name: { fontSize: font.size.lg, color: colors.textPrimary, fontWeight: font.weight.medium, marginRight: 6 },
   typeTag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  instant: { backgroundColor: colors.primaryLight },
   daily: { backgroundColor: colors.warningLight },
   planned: { backgroundColor: colors.infoLight },
   typeText: { fontSize: 9, fontWeight: font.weight.medium, letterSpacing: 0.5 },
@@ -140,7 +147,7 @@ const styles = StyleSheet.create({
   footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.lg, flexWrap: 'wrap' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', flex: 1, gap: 6 },
   pill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
-  pillText: { fontSize: 9, fontWeight: font.weight.medium, letterSpacing: 0.5 },
+  pillText: { fontSize: 9, fontWeight: font.weight.bold, letterSpacing: 0.5 },
   requestBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: 8, borderRadius: radius.pill },
   requestText: { color: colors.textInverse, fontSize: font.size.sm, fontWeight: font.weight.medium },
 });
