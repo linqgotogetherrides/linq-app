@@ -22,6 +22,7 @@ serve(async (req) => {
       currency: typeof body?.currency === "string" ? body.currency : "INR",
       receipt: typeof body?.receipt === "string" ? body.receipt : "",
       plan: typeof body?.plan === "string" ? body.plan : undefined,
+      userId: typeof body?.user_id === "string" ? body.user_id : undefined,
     });
 
     return jsonResponse(order);

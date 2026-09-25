@@ -12,6 +12,23 @@ export const PLAN_AMOUNTS: Record<string, number> = {
   two_year: 24900,
   single_unlock: 900,
   wallet_topup: 50000,
+  // Unlocked by the "Fill the Ride" 10-win milestone. Eligibility is checked
+  // against game_profiles server-side, never trusted from the client.
+  game_annual: 5900,
+};
+
+/** Plans whose availability depends on a server-side unlock, not on price. */
+export const GATED_PLANS: Record<
+  string,
+  { rpc: string; arg: string; unlockField: string; threshold: number; reason: string }
+> = {
+  game_annual: {
+    rpc: "get_game_profile",
+    arg: "p_user_id",
+    unlockField: "total_wins",
+    threshold: 10,
+    reason: "Reach 10 wins in Fill the Ride to unlock the Rs 59 annual plan",
+  },
 };
 
 export type RazorpayOrder = {
@@ -140,6 +157,8 @@ export type CreateOrderInput = {
   currency?: string;
   receipt: string;
   plan?: string;
+  /** Required for milestone-gated plans so the unlock can be verified. */
+  userId?: string;
 };
 
 export async function createRazorpayOrder(input: CreateOrderInput) {
@@ -163,6 +182,26 @@ export async function createRazorpayOrder(input: CreateOrderInput) {
     finalAmount = PLAN_AMOUNTS[input.plan];
     if (amount !== finalAmount) {
       throw new PaymentError(400, "Amount does not match the selected plan");
+    }
+  }
+
+  // Milestone-gated plans: the price is not enough, the unlock is required.
+  // Without this anyone could just order the Rs 59 plan without playing.
+  if (input.plan && GATED_PLANS[input.plan]) {
+    const gate = GATED_PLANS[input.plan];
+    const userId = typeof input.userId === "string" ? input.userId.trim() : "";
+    if (!userId) {
+      throw new PaymentError(400, "Sign in to purchase this plan");
+    }
+    const { data: profile, error: profileError } = await supabaseAdmin().rpc(gate.rpc, {
+      [gate.arg]: userId,
+    });
+    if (profileError) {
+      throw new PaymentError(502, "Could not verify plan eligibility");
+    }
+    const wins = Number((profile as Record<string, unknown> | null)?.[gate.unlockField] ?? 0);
+    if (wins < gate.threshold) {
+      throw new PaymentError(403, gate.reason);
     }
   }
 

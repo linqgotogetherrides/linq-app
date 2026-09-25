@@ -12,6 +12,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { useApp } from '@/src/context/AppContext';
 
 const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -213,6 +214,7 @@ export default function RazorpayCheckoutButton({
   onError,
 }: Props) {
   const [loading, setLoading] = useState(false);
+  const { user } = useApp();
   const [nativeVisible, setNativeVisible] = useState(false);
   const [nativeOrder, setNativeOrder] = useState<RazorpayOrder | null>(null);
   const nativeWebViewRef = useRef<WebView>(null);
@@ -241,6 +243,9 @@ export default function RazorpayCheckoutButton({
         currency,
         receipt: `${receipt}-${Date.now()}`.slice(0, 100),
         plan,
+        // Required by milestone-gated plans (game_annual) so the backend can
+        // verify the unlock instead of trusting the client.
+        user_id: user?.id ?? undefined,
       }),
     });
     const data = await readJson(response);
@@ -251,7 +256,7 @@ export default function RazorpayCheckoutButton({
       throw new Error('Razorpay key configuration mismatch. Update the frontend key and Supabase secrets.');
     }
     return data as RazorpayOrder;
-  }, [amountPaise, currency, plan, receipt]);
+  }, [amountPaise, currency, plan, receipt, user?.id]);
 
   const verifyPayment = useCallback(async (payment: RazorpayPayment) => {
     requireSupabaseConfig();

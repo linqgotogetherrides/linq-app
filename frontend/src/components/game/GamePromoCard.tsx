@@ -34,11 +34,18 @@ export default function GamePromoCard() {
       <Text style={styles.price} testID="game-promo-price">
         ₹{MILESTONE_PLAN_RUPEES} / YEAR
       </Text>
-      <Text style={styles.requirement}>
-        {milestoneUnlocked
-          ? `Unlocked — you have ${wins} wins`
-          : `${MILESTONE_WINS} wins required · ${winsToMilestone} to go`}
-      </Text>
+      <Pressable
+        style={styles.requirementRow}
+        onPress={() => router.push('/game/milestone')}
+        testID="game-promo-milestone"
+      >
+        <Text style={styles.requirement}>
+          {milestoneUnlocked
+            ? `Unlocked — you have ${wins} wins`
+            : `${MILESTONE_WINS} wins required · ${winsToMilestone} to go`}
+        </Text>
+        <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+      </Pressable>
 
       <View style={styles.bars}>
         {Array.from({ length: MILESTONE_WINS }, (_, i) => (
@@ -82,7 +89,13 @@ const styles = StyleSheet.create({
   sub: { fontSize: font.size.xs, color: colors.textSecondary, marginTop: 1 },
   body: { fontSize: font.size.sm, color: colors.textSecondary, marginTop: spacing.md },
   price: { fontSize: font.size.xl, color: colors.primary, fontWeight: font.weight.medium, marginTop: 2 },
-  requirement: { fontSize: font.size.xs, color: colors.textTertiary, marginTop: 2 },
+  requirementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  requirement: { flex: 1, fontSize: font.size.xs, color: colors.textTertiary },
   bars: { flexDirection: 'row', gap: 3, marginTop: spacing.md },
   bar: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.border },
   barFilled: { backgroundColor: colors.success },

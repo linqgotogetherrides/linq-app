@@ -212,6 +212,7 @@ export default function FillTheRide() {
             onAgain={() => void begin()}
             onRefer={() => router.push('/referral')}
             onClose={() => router.push('/referral')}
+            onMilestone={() => router.push('/game/milestone')}
           />
         )}
       </View>
@@ -351,6 +352,7 @@ function ResultOverlay({
   onAgain,
   onRefer,
   onClose,
+  onMilestone,
 }: {
   won: boolean;
   rewarded: boolean;
@@ -360,6 +362,7 @@ function ResultOverlay({
   onAgain: () => void;
   onRefer: () => void;
   onClose: () => void;
+  onMilestone: () => void;
 }) {
   return (
     <View style={styles.overlay} testID="game-result">
@@ -400,12 +403,20 @@ function ResultOverlay({
         </Text>
 
         {milestoneReached ? (
-          <View style={styles.milestone} testID="game-milestone">
+          <Pressable
+            style={styles.milestone}
+            testID="game-milestone"
+            onPress={onMilestone}
+          >
             <Ionicons name="trophy" size={20} color={colors.warning} />
-            <Text style={styles.milestoneText}>
-              10 RIDES FILLED! Annual plan unlocked at ₹{MILESTONE_PLAN_RUPEES}/year
-            </Text>
-          </View>
+            <View style={styles.flex}>
+              <Text style={styles.milestoneText}>
+                10 RIDES FILLED! Annual plan unlocked at ₹{MILESTONE_PLAN_RUPEES}/year
+              </Text>
+              <Text style={styles.milestoneLink}>Tap to view your reward</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.warning} />
+          </Pressable>
         ) : null}
 
         <View style={{ width: '100%', gap: spacing.sm, marginTop: spacing.md }}>
@@ -549,11 +560,13 @@ const styles = StyleSheet.create({
   milestone: {
     flexDirection: 'row',
     alignItems: 'center',
+    width: '100%',
     gap: spacing.sm,
     backgroundColor: colors.warningLight,
     borderRadius: radius.md,
     padding: spacing.md,
     marginTop: spacing.md,
   },
-  milestoneText: { flex: 1, fontSize: font.size.xs, color: colors.textSecondary, fontWeight: font.weight.medium },
+  milestoneText: { fontSize: font.size.xs, color: colors.textSecondary, fontWeight: font.weight.medium },
+  milestoneLink: { fontSize: 9, color: colors.warning, marginTop: 2, fontWeight: font.weight.medium },
 });

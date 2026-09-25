@@ -62,11 +62,18 @@ export default function GameCard() {
           ))}
         </View>
 
-        <Text style={styles.progressHint}>
-          {milestoneUnlocked
-            ? `Annual plan unlocked at ₹${MILESTONE_PLAN_RUPEES}/year`
-            : `${winsToMilestone} more win${winsToMilestone === 1 ? '' : 's'} to unlock the ₹${MILESTONE_PLAN_RUPEES} annual plan`}
-        </Text>
+        <Pressable
+          style={styles.progressHintRow}
+          onPress={() => router.push('/game/milestone')}
+          testID="game-card-milestone"
+        >
+          <Text style={styles.progressHint}>
+            {milestoneUnlocked
+              ? `Annual plan unlocked at ₹${MILESTONE_PLAN_RUPEES}/year`
+              : `${winsToMilestone} more win${winsToMilestone === 1 ? '' : 's'} to unlock the ₹${MILESTONE_PLAN_RUPEES} annual plan`}
+          </Text>
+          <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+        </Pressable>
       </View>
 
       {/* Need lives? */}
@@ -150,7 +157,13 @@ const styles = StyleSheet.create({
   bars: { flexDirection: 'row', gap: 4, marginTop: spacing.md },
   bar: { flex: 1, height: 8, borderRadius: 4, backgroundColor: colors.border },
   barFilled: { backgroundColor: colors.success },
-  progressHint: { fontSize: font.size.xs, color: colors.textSecondary, marginTop: spacing.sm },
+  progressHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: spacing.sm,
+  },
+  progressHint: { flex: 1, fontSize: font.size.xs, color: colors.textSecondary },
   referRow: {
     flexDirection: 'row',
     alignItems: 'center',
