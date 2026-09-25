@@ -14,6 +14,7 @@ import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import EmptyState from '@/src/components/EmptyState';
 import GuestPrompt from '@/src/components/GuestPrompt';
+import NotificationButton from '@/src/components/NotificationButton';
 import { useApp } from '@/src/context/AppContext';
 import { rideService } from '@/src/services/rideService';
 import { Ride, RideRequest } from '@/src/types';
@@ -68,6 +69,7 @@ export default function Rides() {
       <SafeAreaView style={styles.container} edges={['top']} testID="rides-screen">
         <View style={styles.headerTitleRow}>
           <Text style={styles.screenTitle}>Rides</Text>
+          <NotificationButton testID="rides-notifications-button" />
         </View>
         <GuestPrompt
           icon="car-outline"
@@ -84,6 +86,7 @@ export default function Rides() {
     <SafeAreaView style={styles.container} edges={['top']} testID="rides-screen">
       <View style={styles.headerTitleRow}>
         <Text style={styles.screenTitle}>Rides</Text>
+        <NotificationButton testID="rides-notifications-button" />
       </View>
 
       <View style={styles.tabs}>
@@ -244,6 +247,9 @@ function RideManagementCard({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,

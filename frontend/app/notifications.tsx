@@ -13,6 +13,7 @@ import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
 import EmptyState from '@/src/components/EmptyState';
 import GuestPrompt from '@/src/components/GuestPrompt';
+import LinqHeader from '@/src/components/LinqHeader';
 import { useApp } from '@/src/context/AppContext';
 import { Notification, RideRequest } from '@/src/types';
 import { colors, font, radius, shadow, spacing } from '@/src/theme/tokens';
@@ -82,9 +83,7 @@ export default function Notifications() {
   if (!user) {
     return (
       <SafeAreaView style={styles.container} edges={['top']} testID="notifications-screen">
-        <View style={styles.headerTitleRow}>
-          <Text style={styles.screenTitle}>Notifications</Text>
-        </View>
+        <LinqHeader title="Notifications" />
         <GuestPrompt
           icon="notifications-outline"
           title="Login to View Notifications"
@@ -96,14 +95,14 @@ export default function Notifications() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="notifications-screen">
-      <View style={styles.headerTitleRow}>
-        <Text style={styles.screenTitle}>Notifications</Text>
-        {pendingRequests.length > 0 ? (
+      <LinqHeader
+        title="Notifications"
+        right={pendingRequests.length > 0 ? (
           <View style={styles.countBadge} testID="notifications-pending-count">
             <Text style={styles.countText}>{pendingRequests.length}</Text>
           </View>
-        ) : null}
-      </View>
+        ) : undefined}
+      />
 
       {isLoadingRideActivity && !rideRequests.length && !recentNotifications.length ? (
         <View style={styles.loadingWrap}>
@@ -266,19 +265,6 @@ function RequestActionCard({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  screenTitle: {
-    fontSize: font.size['2xl'],
-    color: colors.textPrimary,
-    fontWeight: font.weight.medium,
-  },
   countBadge: {
     minWidth: 24,
     height: 24,

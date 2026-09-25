@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import EmptyState from '@/src/components/EmptyState';
 import GuestPrompt from '@/src/components/GuestPrompt';
+import NotificationButton from '@/src/components/NotificationButton';
 import { mockConversations } from '@/src/mock/data';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
@@ -21,6 +22,7 @@ export default function Messages() {
       <SafeAreaView style={styles.container} edges={['top']} testID="messages-screen">
         <View style={styles.header}>
           <Text style={styles.title}>Messages</Text>
+          <NotificationButton testID="messages-notifications-button" />
         </View>
         <GuestPrompt 
           icon="chatbubbles-outline" 
@@ -41,6 +43,7 @@ export default function Messages() {
     <SafeAreaView style={styles.container} edges={['top']} testID="messages-screen">
       <View style={styles.header}>
         <Text style={styles.title}>Messages</Text>
+        <NotificationButton testID="messages-notifications-button" />
       </View>
 
       <View style={styles.searchBar}>
@@ -104,7 +107,7 @@ export default function Messages() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   title: { fontSize: font.size['2xl'], color: colors.textPrimary, fontWeight: font.weight.medium },
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginHorizontal: spacing.xl, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 44 },
   searchInput: { flex: 1, color: colors.textPrimary, fontSize: font.size.base },

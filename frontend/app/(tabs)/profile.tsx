@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { signOut } from '@/src/lib/auth';
 import GuestPrompt from '@/src/components/GuestPrompt';
+import NotificationButton from '@/src/components/NotificationButton';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 interface Row {
@@ -53,6 +54,7 @@ export default function Profile() {
         <View style={styles.heroBg}>
           <View style={styles.heroTop}>
             <Text style={styles.heroTitle}>Profile</Text>
+            <NotificationButton testID="profile-notifications-button" onDark />
           </View>
         </View>
         <GuestPrompt 
@@ -81,9 +83,12 @@ export default function Profile() {
         <View style={styles.heroBg}>
           <View style={styles.heroTop}>
             <Text style={styles.heroTitle}>Profile</Text>
-            <Pressable testID="edit-profile" onPress={() => router.push('/personal-info')}>
-              <Ionicons name="create-outline" size={22} color={colors.textInverse} />
-            </Pressable>
+            <View style={styles.heroActions}>
+              <NotificationButton testID="profile-notifications-button" onDark />
+              <Pressable testID="edit-profile" onPress={() => router.push('/personal-info')}>
+                <Ionicons name="create-outline" size={22} color={colors.textInverse} />
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -161,6 +166,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surfaceSecondary },
   heroBg: { backgroundColor: colors.primary, height: 120, paddingHorizontal: spacing.xl },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing.md },
+  heroActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   heroTitle: { fontSize: font.size['2xl'], color: colors.textInverse, fontWeight: font.weight.medium },
   profileCard: { marginHorizontal: spacing.xl, marginTop: -60, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: colors.border, ...shadow.md },
   avatar: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: colors.surface, marginTop: -50, backgroundColor: colors.surfaceSecondary },
