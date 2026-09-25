@@ -5,6 +5,7 @@ export type MatchType = 'exact' | 'nearby' | 'other';
 export type RideStatus = 'active' | 'completed' | 'cancelled';
 export type RequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 export type VerificationStatus = 'verified' | 'pending' | 'not_verified';
+export type VerificationDocument = 'aadhaar' | 'pan' | 'dl';
 export type Plan = 'free' | 'yearly' | 'twoYear';
 
 export interface Location {
@@ -77,6 +78,7 @@ export interface User {
   trips?: number;
   co2Saved?: number;
   verification?: VerificationStatus;
+  verificationDocument?: VerificationDocument;
   emergencyContact?: string;
   homeAddress?: string;
   officeAddress?: string;

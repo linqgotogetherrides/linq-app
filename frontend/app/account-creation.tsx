@@ -23,8 +23,19 @@ import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import PrimaryButton from '@/src/components/PrimaryButton';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
+import type { User, VerificationDocument } from '@/src/types';
 
-const VERIFICATION_OPTIONS = [
+function normalizePhone(value?: string) {
+  const digits = (value || '').replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+const VERIFICATION_OPTIONS: {
+  key: VerificationDocument;
+  label: string;
+  sub: string;
+  icon: 'id-card' | 'card' | 'car-sport';
+}[] = [
   { key: 'aadhaar', label: 'Aadhaar Card', sub: 'Verify instantly using Aadhaar', icon: 'id-card' as const },
   { key: 'pan', label: 'PAN Card', sub: 'Verify using your PAN card', icon: 'card' as const },
   { key: 'dl', label: 'Driving Licence', sub: 'Verify using your Driving Licence', icon: 'car-sport' as const },
@@ -33,7 +44,7 @@ const VERIFICATION_OPTIONS = [
 export default function AccountCreation() {
   const router = useRouter();
   const { uid, phone } = useLocalSearchParams<{ uid: string; phone: string }>();
-  const { fetchUserProfile, showToast } = useApp();
+  const { fetchUserProfile, setUser, showToast } = useApp();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [name, setName] = useState('');
@@ -49,7 +60,7 @@ export default function AccountCreation() {
   const [photoAdded, setPhotoAdded] = useState(false);
 
   // ID Verification
-  const [verificationDoc, setVerificationDoc] = useState<string>('aadhaar');
+  const [verificationDoc, setVerificationDoc] = useState<VerificationDocument>('aadhaar');
 
   const [loading, setLoading] = useState(false);
 
@@ -118,21 +129,36 @@ export default function AccountCreation() {
 
     try {
       setLoading(true);
+      const profileAge = Number(age);
+      const normalizedPhone = normalizePhone(phone);
+      const localProfile: User = {
+        id: targetUid,
+        name: name.trim(),
+        age: Number.isFinite(profileAge) ? profileAge : undefined,
+        gender: gender || 'female',
+        womenOnlyMode: gender === 'female' ? womenOnly : false,
+        bio: bio.trim() || undefined,
+        phone: normalizedPhone || undefined,
+        emergencyContact: emergency.trim() || undefined,
+        avatarUrl: avatarUrl || undefined,
+        verification: 'pending',
+        verificationDocument: verificationDoc,
+      };
+      setUser(localProfile);
+
       const profileData: any = {
         id: targetUid,
-        phone_number: phone || emergency,
+        phone_number: normalizedPhone || null,
         name: name.trim(),
-        age: parseInt(age, 10) || 24,
+        age: profileAge || 24,
         gender: gender || 'female',
         women_only_mode: gender === 'female' ? womenOnly : false,
         bio: bio.trim(),
         emergency_contact: emergency.trim(),
         verification_status: 'pending',
+        verification_document: verificationDoc,
+        avatar_url: avatarUrl || null,
       };
-
-      if (avatarUrl) {
-        profileData.avatar_url = avatarUrl;
-      }
 
       const { error } = await supabase.from('user_profiles').upsert(profileData);
       if (error) {

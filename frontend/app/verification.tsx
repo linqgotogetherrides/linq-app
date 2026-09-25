@@ -9,8 +9,9 @@ import LinqLogo from '@/src/components/LinqLogo';
 import PrimaryButton from '@/src/components/PrimaryButton';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
+import type { VerificationDocument } from '@/src/types';
 
-const options: { key: string; label: string; sub: string; icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }[] = [
+const options: { key: VerificationDocument; label: string; sub: string; icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }[] = [
   { key: 'aadhaar', label: 'Aadhaar Card', sub: 'Verify using your Aadhaar', icon: 'id-card', color: colors.primary, bg: colors.primaryLight },
   { key: 'pan', label: 'PAN Card', sub: 'Verify using your PAN card', icon: 'card', color: colors.warning, bg: colors.warningLight },
   { key: 'dl', label: 'Driving Licence', sub: 'Verify using your Driving Licence', icon: 'car-sport', color: colors.info, bg: colors.infoLight },
@@ -19,8 +20,8 @@ const options: { key: string; label: string; sub: string; icon: keyof typeof Ion
 export default function Verification() {
   const router = useRouter();
   const { uid } = useLocalSearchParams<{ uid: string }>();
-  const { fetchUserProfile, showToast } = useApp();
-  const [selected, setSelected] = useState<string | null>('aadhaar');
+  const { user, fetchUserProfile, showToast } = useApp();
+  const [selected, setSelected] = useState<VerificationDocument>(user?.verificationDocument || 'aadhaar');
   const [loading, setLoading] = useState(false);
 
   const handleContinue = async () => {
@@ -32,7 +33,8 @@ export default function Verification() {
     try {
       setLoading(true);
       const { error } = await supabase.from('user_profiles').update({
-        verification_status: 'pending'
+        verification_status: 'pending',
+        verification_document: selected,
       }).eq('id', uid);
       
       if (error) throw error;

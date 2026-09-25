@@ -6,6 +6,7 @@ import type {
   SavedLocationType,
   SavedUserLocations,
   User,
+  VerificationDocument,
 } from '@/src/types';
 import { supabase } from '@/src/lib/supabase';
 
@@ -86,6 +87,24 @@ function normalizeSavedLocations(value: unknown): SavedUserLocations {
   };
 }
 
+function normalizePhone(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return undefined;
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function normalizeAvatarUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const url = value.trim();
+  if (!url || url.includes('i.pravatar.cc') || url.includes('pravatar.cc')) return undefined;
+  return url;
+}
+
+function normalizeVerificationDocument(value: unknown): VerificationDocument | undefined {
+  return value === 'aadhaar' || value === 'pan' || value === 'dl' ? value : undefined;
+}
+
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -162,7 +181,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .from('user_profiles')
         .select('*')
         .eq('id', uid)
-        .single();
+        .maybeSingle();
         
       if (error || !data) {
         console.log('User profile not found in Supabase:', error?.message);
@@ -176,14 +195,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         gender: data.gender || undefined,
         womenOnlyMode: data.women_only_mode,
         bio: data.bio || undefined,
-        phone: data.phone_number || undefined,
+        phone: normalizePhone(data.phone_number),
         email: data.email || undefined,
-        avatarUrl: data.avatar_url || 'https://i.pravatar.cc/150?u=newuser',
+        avatarUrl: normalizeAvatarUrl(data.avatar_url),
         rating: data.rating,
         trips: data.total_trips,
         co2Saved: data.co2_saved_kg,
         verification: data.verification_status,
-        emergencyContact: data.emergency_contact || undefined,
+        verificationDocument: normalizeVerificationDocument(
+          data.verification_document || data.verification_doc
+        ),
+        emergencyContact: normalizePhone(data.emergency_contact),
         homeAddress: data.home_address || undefined,
         officeAddress: data.office_address || undefined,
         collegeAddress: data.college_address || undefined,

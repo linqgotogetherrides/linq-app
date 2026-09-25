@@ -88,14 +88,30 @@ export default function Profile() {
         </View>
 
         <View style={styles.profileCard}>
-          <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" />
-          <Text style={styles.name}>{user.name}, {user.age}</Text>
-          <View style={styles.badgeRow}>
-            <View style={styles.verifiedBadge}>
-              <Ionicons name="shield-checkmark" size={12} color={colors.success} />
-              <Text style={styles.verifiedText}>Verified</Text>
+          {user.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Ionicons name="person-outline" size={34} color={colors.textTertiary} />
             </View>
-            <Text style={styles.genderText}>{user.gender === 'female' ? 'Female' : 'Male'}</Text>
+          )}
+          <Text style={styles.name}>
+            {user.name}{user.age != null ? `, ${user.age}` : ''}
+          </Text>
+          <View style={styles.badgeRow}>
+            <View style={[styles.verifiedBadge, user.verification !== 'verified' && styles.verificationPending]}>
+              <Ionicons
+                name={user.verification === 'verified' ? 'shield-checkmark' : 'shield-outline'}
+                size={12}
+                color={user.verification === 'verified' ? colors.success : colors.textSecondary}
+              />
+              <Text style={[styles.verifiedText, user.verification !== 'verified' && styles.verificationPendingText]}>
+                {user.verification === 'verified' ? 'Verified' : user.verification === 'pending' ? 'Pending' : 'Not verified'}
+              </Text>
+            </View>
+            <Text style={styles.genderText}>
+              {user.gender ? `${user.gender[0].toUpperCase()}${user.gender.slice(1)}` : 'Not specified'}
+            </Text>
           </View>
           {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
 
@@ -148,10 +164,13 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: font.size['2xl'], color: colors.textInverse, fontWeight: font.weight.medium },
   profileCard: { marginHorizontal: spacing.xl, marginTop: -60, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: colors.border, ...shadow.md },
   avatar: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: colors.surface, marginTop: -50, backgroundColor: colors.surfaceSecondary },
+  avatarPlaceholder: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, marginTop: -50, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
   name: { fontSize: font.size.xl, color: colors.textPrimary, fontWeight: font.weight.medium, marginTop: spacing.sm },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
   verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.successLight, paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.pill },
+  verificationPending: { backgroundColor: colors.surfaceSecondary },
   verifiedText: { fontSize: font.size.xs, color: colors.success, fontWeight: font.weight.medium },
+  verificationPendingText: { color: colors.textSecondary },
   genderText: { fontSize: font.size.sm, color: colors.textSecondary },
   bio: { fontSize: font.size.sm, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm, paddingHorizontal: spacing.md },
   stats: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg, alignSelf: 'stretch' },

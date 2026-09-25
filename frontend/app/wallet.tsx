@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
+import RazorpayCheckoutButton from '@/src/components/RazorpayCheckoutButton';
 import { useApp } from '@/src/context/AppContext';
 import { mockTransactions } from '@/src/mock/data';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
@@ -21,9 +22,24 @@ export default function Wallet() {
           <Text style={styles.balanceLabel}>Total Balance</Text>
           <Text style={styles.balanceValue}>₹{walletBalance.toLocaleString('en-IN')}</Text>
           <View style={styles.balanceActions}>
-            <Pressable style={styles.balanceBtn} testID="add-money" onPress={() => { addToWallet(500); showToast('₹500 added to wallet'); }}>
-              <Ionicons name="add" size={16} color={colors.primary} /><Text style={styles.balanceBtnText}>Add Money</Text>
-            </Pressable>
+            <RazorpayCheckoutButton
+              style={styles.balanceBtn}
+              testID="add-money"
+              amountPaise={50000}
+              receipt="wallet-topup"
+              plan="wallet_topup"
+              title="Add Money"
+              description="Add ₹500 to your LinQ wallet"
+              onError={showToast}
+              textStyle={styles.balanceBtnText}
+              onSuccess={() => {
+                addToWallet(500);
+                showToast('₹500 added to wallet');
+              }}
+            >
+              <Ionicons name="add" size={16} color={colors.primary} />
+              <Text style={styles.balanceBtnText}>Add Money</Text>
+            </RazorpayCheckoutButton>
           </View>
         </View>
 

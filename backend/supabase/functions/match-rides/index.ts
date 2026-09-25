@@ -1,7 +1,7 @@
-import { serve } from "std/http/server.ts";
-import { createClient } from "@supabase/supabase-js";
-import * as polyline from "@mapbox/polyline";
-import * as turf from "@turf/turf";
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import * as polyline from "https://esm.sh/@mapbox/polyline@1.2.1";
+import * as turf from "https://esm.sh/@turf/turf@6.5.0";
 
 // Configuration thresholds
 const MAX_DETOUR_KM = 5.0;

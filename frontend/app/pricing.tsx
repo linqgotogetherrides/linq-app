@@ -4,12 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
+import RazorpayCheckoutButton from '@/src/components/RazorpayCheckoutButton';
 import { useApp } from '@/src/context/AppContext';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 export default function Pricing() {
   const router = useRouter();
-  const { access, upgradePlan, singleUnlock } = useApp();
+  const { access, upgradePlan, singleUnlock, showToast } = useApp();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="pricing-screen">
@@ -52,9 +53,20 @@ export default function Pricing() {
             <PlanFeature text="5 Chats per day" />
             <PlanFeature text="Valid for 1 year" />
             <PlanFeature text="Cancel anytime" />
-            <Pressable testID="get-yearly-plan" style={styles.planBtn} onPress={() => upgradePlan('yearly')}>
+            <RazorpayCheckoutButton
+              testID="get-yearly-plan"
+              amountPaise={19900}
+              receipt="yearly-plan"
+              plan="yearly"
+              title="Yearly Plan"
+              description="LinQ Yearly Plan"
+              onError={showToast}
+              style={styles.planBtn}
+              textStyle={styles.planBtnText}
+              onSuccess={() => upgradePlan('yearly')}
+            >
               <Text style={styles.planBtnText}>Get Yearly Plan</Text>
-            </Pressable>
+            </RazorpayCheckoutButton>
           </View>
 
           {/* 2 Year */}
@@ -67,24 +79,50 @@ export default function Pricing() {
             <PlanFeature text="5 Chats per day" />
             <PlanFeature text="Valid for 2 years" />
             <PlanFeature text="Cancel anytime" />
-            <Pressable testID="get-2year-plan" style={[styles.planBtn, styles.planBtnOutline]} onPress={() => upgradePlan('twoYear')}>
+            <RazorpayCheckoutButton
+              testID="get-2year-plan"
+              amountPaise={24900}
+              receipt="two-year-plan"
+              plan="two_year"
+              title="2 Year Plan"
+              description="LinQ 2 Year Plan"
+              onError={showToast}
+              style={[styles.planBtn, styles.planBtnOutline]}
+              textStyle={[styles.planBtnText, { color: colors.primary }]}
+              onSuccess={() => upgradePlan('twoYear')}
+            >
               <Text style={[styles.planBtnText, { color: colors.primary }]}>Get 2 Year Plan</Text>
-            </Pressable>
+            </RazorpayCheckoutButton>
           </View>
         </View>
 
         {/* Single Unlock */}
-        <Pressable style={styles.singleUnlock} testID="single-unlock" onPress={singleUnlock}>
-          <View style={styles.unlockIcon}><Ionicons name="key" size={22} color={colors.warning} /></View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.unlockTitle}>Single Unlock</Text>
-            <Text style={styles.unlockSub}>Unlock a request or start a chat instantly. Valid for 1 request or 1 chat.</Text>
+        <RazorpayCheckoutButton
+          style={styles.singleUnlock}
+          testID="single-unlock"
+          amountPaise={900}
+          receipt="single-unlock"
+          plan="single_unlock"
+          title="Single Unlock"
+          description="LinQ Single Unlock"
+          onError={showToast}
+          onSuccess={() => {
+            singleUnlock();
+            showToast('Single unlock purchased');
+          }}
+        >
+          <View style={styles.unlockContent}>
+            <View style={styles.unlockIcon}><Ionicons name="key" size={22} color={colors.warning} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.unlockTitle}>Single Unlock</Text>
+              <Text style={styles.unlockSub}>Unlock a request or start a chat instantly. Valid for 1 request or 1 chat.</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.unlockPrice}>₹9</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </View>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.unlockPrice}>₹9</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-          </View>
-        </Pressable>
+        </RazorpayCheckoutButton>
 
         <Text style={styles.sectionTitle}>Earn Rewards</Text>
         <View style={styles.rewardCard}>
@@ -171,6 +209,7 @@ const styles = StyleSheet.create({
   planBtnText: { fontSize: font.size.xs, color: colors.textInverse, fontWeight: font.weight.medium },
 
   singleUnlock: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.border, marginTop: spacing.lg, ...shadow.sm },
+  unlockContent: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, width: '100%' },
   unlockIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.warningLight, alignItems: 'center', justifyContent: 'center' },
   unlockTitle: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium },
   unlockSub: { fontSize: font.size.sm, color: colors.textSecondary, marginTop: 2 },
