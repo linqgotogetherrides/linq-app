@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
+import RouteMatchPreview from '@/src/components/RouteMatchPreview';
 import { Ride } from '@/src/types';
 import { colors, radius, spacing, font, shadow } from '@/src/theme/tokens';
 
@@ -41,7 +42,17 @@ export default function RideCard({ ride, onRequest }: Props) {
     : matchScoreVal != null && matchScoreVal >= 40
       ? 'nearby'
       : 'default';
-  const matchLabel = matchScoreVal != null ? `${matchScoreVal}% MATCH` : 'MATCH PENDING';
+  // The user asked to stop quoting a match number and show the routes instead,
+  // so the wording is qualitative; the numeric score is still available on the
+  // details screen where the map explains it.
+  const matchLabel =
+    matchScoreVal == null
+      ? 'ROUTE SHOWN'
+      : matchScoreVal >= 75
+        ? 'ROUTES ALMOST ALIGNED'
+        : matchScoreVal >= 40
+          ? 'ROUTES PARTLY OVERLAP'
+          : 'DIFFERENT ROUTE';
   const secondaryTag = ride.vehicle?.kind === 'car' ? 'CAR' : ride.vehicle?.kind === 'bike' ? 'BIKE' : !ride.vehicle ? 'WALK / BUS' : 'AUTO';
 
   return (
@@ -91,9 +102,30 @@ export default function RideCard({ ride, onRequest }: Props) {
         </View>
       </View>
 
-      <View style={styles.footerRow}>
+      {ride.userRouteGeometry && ride.driverRouteGeometry ? (
+        <View style={styles.routePreviewWrap}>
+          <RouteMatchPreview
+            userRoute={ride.userRouteGeometry}
+            driverRoute={ride.driverRouteGeometry}
+            matchLabel={matchLabel}
+          />
+          <Pressable
+            style={styles.viewRouteBtn}
+            testID={`view-route-${ride.id}`}
+            onPress={() => handleAuthRequiredAction(() => router.push(`/ride/${ride.id}`))}
+          >
+            <Ionicons name="map-outline" size={14} color={colors.primary} />
+            <Text style={styles.viewRouteText}>View full route</Text>
+          </Pressable>
+        </View>
+      ) : (
         <View style={styles.tags}>
           <TagPill label={matchLabel} variant={matchVariant as any} />
+        </View>
+      )}
+
+      <View style={styles.footerRow}>
+        <View style={styles.tags}>
           <TagPill label={secondaryTag} />
           {ride.womenOnly && <TagPill label="WOMEN ONLY" variant="women" />}
         </View>
@@ -144,7 +176,16 @@ const styles = StyleSheet.create({
   timeText: { fontSize: font.size.sm, color: colors.textSecondary },
   seats: { fontSize: font.size.sm, color: colors.textSecondary },
 
-  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.lg, flexWrap: 'wrap' },
+  routePreviewWrap: { marginTop: spacing.lg, gap: spacing.sm },
+  viewRouteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+  },
+  viewRouteText: { fontSize: font.size.sm, color: colors.primary, fontWeight: font.weight.medium },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, flexWrap: 'wrap' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', flex: 1, gap: 6 },
   pill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   pillText: { fontSize: 9, fontWeight: font.weight.bold, letterSpacing: 0.5 },

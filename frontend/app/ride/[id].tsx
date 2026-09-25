@@ -172,17 +172,28 @@ export default function RideDetails() {
             </Pressable>
           </View>
           {pickupCoords && dropCoords ? (
-            <LeafletMap
-              pickup={pickupCoords}
-              destination={dropCoords}
-              driverRoute={routeGeometry}
-              pickupLabel={ride.pickup.label}
-              destinationLabel={ride.destination.label}
-              currentLocation={currentLocation || undefined}
-              centerOnCurrentLocation={centerOnCurrentLocation}
-              allowStraightLineFallback={false}
-              height={240}
-            />
+            <>
+              <LeafletMap
+                pickup={pickupCoords}
+                destination={dropCoords}
+                driverRoute={routeGeometry}
+                userRoute={ride.userRouteGeometry}
+                pickupLabel={ride.pickup.label}
+                destinationLabel={ride.destination.label}
+                currentLocation={currentLocation || undefined}
+                centerOnCurrentLocation={centerOnCurrentLocation}
+                allowStraightLineFallback={false}
+                height={260}
+              />
+              {ride.userRouteGeometry ? (
+                <View style={styles.routeLegend} testID="ride-route-legend">
+                  <View style={[styles.legendSwatch, { backgroundColor: colors.primary }]} />
+                  <Text style={styles.legendText}>Your searched route</Text>
+                  <View style={[styles.legendSwatch, { backgroundColor: '#F97316' }]} />
+                  <Text style={styles.legendText}>This ride&apos;s route</Text>
+                </View>
+              ) : null}
+            </>
           ) : (
             <View style={styles.mapUnavailable}>
               <Ionicons name="location-outline" size={22} color={colors.textSecondary} />
@@ -341,6 +352,15 @@ const styles = StyleSheet.create({
     fontSize: font.size.xs,
     fontWeight: font.weight.medium,
   },
+  routeLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+    flexWrap: 'wrap',
+  },
+  legendSwatch: { width: 14, height: 3, borderRadius: 2 },
+  legendText: { fontSize: font.size.xs, color: colors.textSecondary, marginRight: spacing.md },
   mapUnavailable: {
     height: 240,
     alignItems: 'center',

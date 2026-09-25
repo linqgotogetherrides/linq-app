@@ -12,6 +12,12 @@ import Slider from '@react-native-community/slider';
 import { useApp } from '@/src/context/AppContext';
 import { LocationCoordinates } from '@/src/services/locationService';
 import { rideService } from '@/src/services/rideService';
+import {
+  clearRideDraft,
+  getRideDraft,
+  suggestPricePerSeat,
+  updateRideDraft,
+} from '@/src/lib/rideDraft';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -96,16 +102,21 @@ export default function CreateRide() {
   const [hasVehicle, setHasVehicle] = useState(false);
   const [transport, setTransport] = useState<'car' | 'bike' | 'auto'>('car');
   const [availableSeats, setAvailableSeats] = useState(1);
-  const [price, setPrice] = useState(150);
+  const draft = getRideDraft();
+  const [price, setPrice] = useState<number>(draft?.price ?? 0);
   const [womenOnly, setWomenOnly] = useState(user?.womenOnlyMode ?? false);
   const [model, setModel] = useState('');
   const [plate, setPlate] = useState('');
   const [published, setPublished] = useState(false);
   const [publishedStatus, setPublishedStatus] = useState<'active' | 'draft'>('active');
   const [publishing, setPublishing] = useState(false);
-  const [travelTime, setTravelTime] = useState(params.travelTime || '08:00 AM');
-  const [returnTime, setReturnTime] = useState(params.returnTime || '06:00 PM');
-  const [travelDate, setTravelDate] = useState(params.travelDate || 'Sat, 24 Aug');
+  const [travelTime, setTravelTime] = useState<string>(
+    draft?.travelTime || params.travelTime || '08:00 AM',
+  );
+  const [returnTime, setReturnTime] = useState<string>(
+    draft?.returnTime || params.returnTime || '06:00 PM',
+  );
+  const [travelDate, setTravelDate] = useState<string>(draft?.travelDate ?? '');
   const [passengers, setPassengers] = useState<{ name: string; sub: string; self?: boolean; data?: PassengerData }[]>([
     { name: 'Passenger 1', sub: 'Myself', self: true },
   ]);
@@ -126,8 +137,17 @@ export default function CreateRide() {
       distanceMeters: locationFlowResult.distanceMeters,
       durationSeconds: locationFlowResult.durationSeconds,
     });
+    // Price is derived from the real route, not a hardcoded 150.
+    const suggested = suggestPricePerSeat(locationFlowResult.distanceMeters);
+    if (suggested > 0) setPrice(suggested);
     clearLocationFlowResult();
   }, [clearLocationFlowResult, locationFlowResult]);
+
+  // Mirror the form into the module-level draft so a remount (for example
+  // after the location flow) cannot wipe what the rider already entered.
+  React.useEffect(() => {
+    updateRideDraft({ travelTime, returnTime, travelDate, price });
+  }, [travelTime, returnTime, travelDate, price]);
 
   // Modals
   const [timePicker, setTimePicker] = useState<null | 'travel' | 'return'>(null);
@@ -258,6 +278,7 @@ export default function CreateRide() {
         womenOnly,
         status,
       });
+      clearRideDraft();
       setPublished(true);
       setPublishedStatus(status);
       return true;
@@ -503,14 +524,16 @@ export default function CreateRide() {
                   minimumValue={50}
                   maximumValue={300}
                   step={10}
-                  value={price}
+                  value={Math.min(300, Math.max(50, price || 50))}
                   onValueChange={setPrice}
                   minimumTrackTintColor={colors.primary}
                   maximumTrackTintColor={colors.surfaceSecondary}
                   thumbTintColor={colors.primary}
                 />
                 <View style={styles.rowBetween}><Text style={styles.sliderEnd}>₹50</Text><Text style={styles.sliderEnd}>₹300</Text></View>
-                <Text style={styles.note}>Note: 2 rupees per km. Tap slider to adjust price.</Text>
+                <Text style={styles.note}>
+                  Suggested at ₹2 per km for your {routeMetrics?.distanceMeters ? `${(routeMetrics.distanceMeters / 1000).toFixed(1)} km` : 'route'}. Drag to adjust.
+                </Text>
               </View>
             )}
 

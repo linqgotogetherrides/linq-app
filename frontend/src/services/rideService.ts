@@ -304,6 +304,10 @@ export const rideService = {
           matchType: score.matchType,
           sharedDistanceKm: score.sharedDistanceKm,
           matchExplanation: score.matchExplanation,
+          // Kept so the card and the details screen can draw BOTH routes
+          // instead of describing the match with a number.
+          userRouteGeometry: userRoute.geometry,
+          driverRouteGeometry: candidateRoute.geometry,
         };
       });
 

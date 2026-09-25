@@ -1,4 +1,5 @@
 // LinQ Rides – Domain Types
+import type { RouteGeometry } from '@/src/lib/routing/osrm';
 export type RideType = 'instant' | 'daily' | 'planned';
 export type VehicleKind = 'car' | 'bike' | 'auto' | 'cab';
 export type MatchType = 'exact' | 'nearby' | 'other';
@@ -105,6 +106,10 @@ export interface Ride {
   matchType?: MatchType;
   sharedDistanceKm?: number;
   matchExplanation?: string;
+  /** The rider's own searched route, for the side-by-side route map. */
+  userRouteGeometry?: RouteGeometry;
+  /** The posted ride's route, for the side-by-side route map. */
+  driverRouteGeometry?: RouteGeometry;
   status: RideStatus;
   co2Saved?: number;
   tags?: string[];
