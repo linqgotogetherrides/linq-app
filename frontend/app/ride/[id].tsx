@@ -10,6 +10,7 @@ import LeafletMap from '@/src/components/LeafletMap';
 import { useApp } from '@/src/context/AppContext';
 import { useCurrentLocation } from '@/src/hooks/useCurrentLocation';
 import { rideService } from '@/src/services/rideService';
+import { rideRequestService } from '@/src/services/rideRequestService';
 import { Ride } from '@/src/types';
 import { fetchOSRMRoute, RouteGeometry } from '@/src/lib/routing/osrm';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
@@ -44,6 +45,7 @@ export default function RideDetails() {
   } = useCurrentLocation({ autoLoad: true });
   const [ride, setRide] = useState<Ride | null>(null);
   const [requested, setRequested] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const [routeGeometry, setRouteGeometry] = useState<RouteGeometry | undefined>();
   const [centerOnCurrentLocation, setCenterOnCurrentLocation] = useState(false);
   const initialLocationCenteredRef = useRef(false);
@@ -96,11 +98,12 @@ export default function RideDetails() {
   const pickupCoords = getRideCoordinates(ride.pickup);
   const dropCoords = getRideCoordinates(ride.destination);
 
-  const onRequest = () => {
+  const onRequest = async () => {
     if (!user) {
       router.push('/onboarding');
       return;
     }
+    if (requesting) return;
     if (requested) {
       setRequested(false);
       showToast('Request cancelled');
@@ -111,8 +114,17 @@ export default function RideDetails() {
       router.push('/pricing');
       return;
     }
-    setRequested(true);
-    showToast('Request sent to ' + ride.creator.name);
+
+    setRequesting(true);
+    try {
+      await rideRequestService.requestRide(ride.id, user.id);
+      setRequested(true);
+      showToast('Request sent to ' + ride.creator.name);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'The ride request could not be sent.');
+    } finally {
+      setRequesting(false);
+    }
   };
 
   const handleLocate = async () => {
@@ -271,9 +283,10 @@ export default function RideDetails() {
         <View style={{ flex: 1 }}>
           <PrimaryButton
             testID="request-ride-button"
-            title={requested ? 'Cancel Request' : 'Request Ride'}
+            title={requesting ? 'Sending Request…' : requested ? 'Cancel Request' : 'Request Ride'}
             variant={requested ? 'secondary' : 'primary'}
             icon={requested ? 'close-circle' : 'flash'}
+            loading={requesting}
             onPress={onRequest}
           />
         </View>

@@ -2,7 +2,7 @@
 export type RideType = 'instant' | 'daily' | 'planned';
 export type VehicleKind = 'car' | 'bike' | 'auto' | 'cab';
 export type MatchType = 'exact' | 'nearby' | 'other';
-export type RideStatus = 'active' | 'completed' | 'cancelled';
+export type RideStatus = 'active' | 'confirmed' | 'completed' | 'cancelled';
 export type RequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 export type VerificationStatus = 'verified' | 'pending' | 'not_verified';
 export type VerificationDocument = 'aadhaar' | 'pan' | 'dl';
@@ -151,6 +151,9 @@ export interface Notification {
   time: string;
   type: 'request' | 'accepted' | 'declined' | 'reminder' | 'reward' | 'system';
   read?: boolean;
+  rideId?: string;
+  requestId?: string;
+  createdAt?: string;
 }
 
 export interface Conversation {

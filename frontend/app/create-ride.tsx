@@ -213,6 +213,10 @@ export default function CreateRide() {
   };
 
   const publish = async () => {
+    if (!user) {
+      router.replace('/onboarding');
+      return;
+    }
     if (!pickup.trim() || !pickupCoordinates) {
       openLocationFlow('pickup');
       return;
@@ -225,6 +229,7 @@ export default function CreateRide() {
     setPublishing(true);
     try {
       await rideService.createRide({
+        creator: user,
         pickup: {
           label: pickup,
           address: pickup,

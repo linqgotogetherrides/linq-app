@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type {
   AccessState,
   LocationFlowResult,
+  Notification,
+  RideRequest,
   SavedLocation,
   SavedLocationType,
   SavedUserLocations,
@@ -9,6 +11,7 @@ import type {
   VerificationDocument,
 } from '@/src/types';
 import { supabase } from '@/src/lib/supabase';
+import { rideRequestService } from '@/src/services/rideRequestService';
 
 interface AppContextValue {
   user: User | null;
@@ -38,6 +41,15 @@ interface AppContextValue {
   locationFlowResult: LocationFlowResult | null;
   setLocationFlowResult: (result: LocationFlowResult) => void;
   clearLocationFlowResult: () => void;
+  rideRequests: RideRequest[];
+  rideNotifications: Notification[];
+  pendingRideRequestCount: number;
+  isLoadingRideActivity: boolean;
+  refreshRideActivity: () => Promise<void>;
+  respondToRideRequest: (
+    requestId: string,
+    decision: 'accepted' | 'declined'
+  ) => Promise<void>;
 }
 
 const defaultAccess: AccessState = {
@@ -116,11 +128,69 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [rewardBalance, setRewardBalance] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [locationFlowResult, setLocationFlowResult] = useState<LocationFlowResult | null>(null);
+  const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
+  const [rideNotifications, setRideNotifications] = useState<Notification[]>([]);
+  const [isLoadingRideActivity, setIsLoadingRideActivity] = useState(false);
 
   const showToast = useCallback((m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 2200);
   }, []);
+
+  const refreshRideActivity = useCallback(async () => {
+    const userId = user?.id;
+    if (!userId) {
+      setRideRequests([]);
+      setRideNotifications([]);
+      return;
+    }
+
+    setIsLoadingRideActivity(true);
+    try {
+      const [requests, notifications] = await Promise.all([
+        rideRequestService.getIncomingRideRequests(userId),
+        rideRequestService.getNotifications(userId),
+      ]);
+      setRideRequests(requests);
+      setRideNotifications(notifications);
+    } finally {
+      setIsLoadingRideActivity(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) return;
+
+    void refreshRideActivity();
+    const channel = supabase
+      .channel(`ride-activity:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ride_requests',
+          filter: `owner_id=eq.${userId}`,
+        },
+        () => void refreshRideActivity()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        () => void refreshRideActivity()
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshRideActivity, user?.id]);
 
   const clearLocationFlowResult = useCallback(() => {
     setLocationFlowResult(null);
@@ -251,6 +321,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     showToast('Single unlock added');
   }, [showToast]);
 
+  const respondToRideRequest = useCallback(async (
+    requestId: string,
+    decision: 'accepted' | 'declined'
+  ) => {
+    const ownerId = user?.id;
+    if (!ownerId) {
+      showToast('Sign in to respond to ride requests.');
+      return;
+    }
+
+    const request = rideRequests.find((item) => item.id === requestId);
+    try {
+      await rideRequestService.respondToRideRequest(requestId, ownerId, decision);
+      await refreshRideActivity();
+      showToast(
+        decision === 'accepted'
+          ? `Ride confirmed with ${request?.requester.name ?? 'the rider'}`
+          : 'Ride request declined'
+      );
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'The request could not be updated.');
+      await refreshRideActivity();
+    }
+  }, [refreshRideActivity, rideRequests, showToast, user?.id]);
+
   const addToWallet = useCallback((amount: number) => {
     setWalletBalance((b) => b + amount);
   }, []);
@@ -268,7 +363,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         access, useRequest, useChat, upgradePlan, singleUnlock,
         walletBalance, rewardBalance, addToWallet, spendReward,
         toast, showToast, fetchUserProfile, refreshUser,
-        saveUserLocation, locationFlowResult, setLocationFlowResult, clearLocationFlowResult
+        saveUserLocation, locationFlowResult, setLocationFlowResult, clearLocationFlowResult,
+        rideRequests, rideNotifications,
+        pendingRideRequestCount: rideRequests.filter((request) => request.status === 'pending').length,
+        isLoadingRideActivity, refreshRideActivity, respondToRideRequest
       }}
     >
       {children}

@@ -1,12 +1,172 @@
-import { Ride, RideType } from '@/src/types';
-import { mockRides } from '@/src/mock/data';
+import { supabase } from '@/src/lib/supabase';
 import { fetchOSRMRoute, Coordinates } from '@/src/lib/routing/osrm';
 import { haversineDistanceKm } from '@/src/lib/routing/routeGeometry';
 import { scoreRideMatch, parseTimeToMinutes } from '@/src/lib/routing/routeScoring';
 import { LocationCoordinates } from '@/src/services/locationService';
+import { mockRides } from '@/src/mock/data';
+import { Ride, RideStatus, RideType, User, VehicleKind } from '@/src/types';
 
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+type DbRow = Record<string, unknown>;
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const createdRides: Ride[] = [];
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizePhone(value: unknown): string | undefined {
+  const phone = asString(value).replace(/\D/g, '');
+  if (!phone) return undefined;
+  return phone.length > 10 ? phone.slice(-10) : phone;
+}
+
+function normalizeAvatar(value: unknown): string | undefined {
+  const url = asString(value).trim();
+  if (!url || url.includes('pravatar.cc')) return undefined;
+  return url;
+}
+
+function asObject(value: unknown): DbRow | null {
+  if (!value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) return asObject(value[0]);
+  return value as DbRow;
+}
+
+export function mapUserRow(row: DbRow | null | undefined): User {
+  const source = row ?? {};
+  const gender = asString(source.gender);
+  const verification = asString(source.verification_status, 'not_verified');
+  return {
+    id: asString(source.id),
+    name: asString(source.name, 'Rider'),
+    age: source.age == null ? undefined : asNumber(source.age),
+    gender: gender === 'female' || gender === 'male' || gender === 'other' ? gender : undefined,
+    womenOnlyMode: Boolean(source.women_only_mode),
+    bio: asString(source.bio) || undefined,
+    phone: normalizePhone(source.phone_number),
+    email: asString(source.email) || undefined,
+    avatarUrl: normalizeAvatar(source.avatar_url),
+    rating: source.rating == null ? undefined : asNumber(source.rating),
+    trips: source.total_trips == null ? undefined : asNumber(source.total_trips),
+    co2Saved: source.co2_saved_kg == null ? undefined : asNumber(source.co2_saved_kg),
+    verification:
+      verification === 'verified' || verification === 'pending' ? verification : 'not_verified',
+  };
+}
+
+function pointFromValue(value: unknown): { latitude: number; longitude: number } | null {
+  if (typeof value === 'string') {
+    const match = value.match(/POINT\s*\(([-\d.]+)\s+([-\d.]+)\)/i);
+    if (!match) return null;
+    const longitude = Number(match[1]);
+    const latitude = Number(match[2]);
+    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
+  }
+
+  const point = asObject(value);
+  const coordinates = point?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+  const longitude = Number(coordinates[0]);
+  const latitude = Number(coordinates[1]);
+  return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
+}
+
+function displayTime(value: unknown): string | undefined {
+  const time = asString(value);
+  if (!time) return undefined;
+  const [hourText, minuteText] = time.split(':');
+  const hour = Number(hourText);
+  if (!Number.isFinite(hour)) return time;
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minuteText ?? '00'} ${suffix}`;
+}
+
+function toSupabaseTime(value?: string): string | null {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const suffix = match[3]?.toUpperCase();
+  if (suffix === 'PM' && hour < 12) hour += 12;
+  if (suffix === 'AM' && hour === 12) hour = 0;
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
+}
+
+function dayLabelsToIndexes(days?: string[]): number[] | null {
+  if (!days?.length) return null;
+  return days
+    .map((day) => DAY_NAMES.findIndex((name) => name.toLowerCase() === day.slice(0, 3).toLowerCase()))
+    .filter((index) => index >= 0);
+}
+
+function indexesToDayLabels(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const days = value.map(Number).filter((index) => index >= 0 && index <= 6).map((index) => DAY_NAMES[index]);
+  return days.length ? days : undefined;
+}
+
+export function mapRideRow(row: DbRow, creatorRow?: DbRow | null): Ride {
+  const creator = mapUserRow(asObject(row.creator) ?? creatorRow ?? null);
+  const pickupAddress = asString(row.pickup_address, 'Pickup');
+  const destinationAddress = asString(row.dropoff_address, 'Destination');
+  const pickupPoint = pointFromValue(row.pickup_location);
+  const destinationPoint = pointFromValue(row.dropoff_location);
+  const rideType = asString(row.ride_type, 'daily');
+  const status = asString(row.status, 'active') as RideStatus;
+  const availableSeats = Math.max(0, asNumber(row.available_seats));
+  const occupiedSeats = Math.max(0, asNumber(row.occupied_seats, 1));
+  const vehicleKind = asString(row.vehicle_kind) as VehicleKind | '';
+  const totalDistanceMeters = row.total_distance_meters == null
+    ? undefined
+    : asNumber(row.total_distance_meters);
+
+  return {
+    id: asString(row.id),
+    creator,
+    type: (rideType === 'instant' || rideType === 'planned' ? rideType : 'daily') as RideType,
+    pickup: {
+      label: pickupAddress,
+      address: pickupAddress,
+      latitude: pickupPoint?.latitude,
+      longitude: pickupPoint?.longitude,
+    },
+    destination: {
+      label: destinationAddress,
+      address: destinationAddress,
+      latitude: destinationPoint?.latitude,
+      longitude: destinationPoint?.longitude,
+    },
+    date: asString(row.travel_date) || undefined,
+    time: displayTime(row.travel_time),
+    returnTime: displayTime(row.return_time),
+    days: indexesToDayLabels(row.selected_days),
+    pricePerSeat: asNumber(row.price_per_seat),
+    seatsTotal: availableSeats + occupiedSeats,
+    seatsAvailable: availableSeats,
+    vehicle: vehicleKind
+      ? {
+          id: asString(row.id),
+          kind: vehicleKind,
+          model: asString(row.vehicle_model, 'Vehicle'),
+          numberPlate: asString(row.vehicle_plate),
+          seats: availableSeats + occupiedSeats,
+        }
+      : undefined,
+    womenOnly: Boolean(row.women_only),
+    status,
+    co2Saved: row.co2_saved_kg == null ? undefined : asNumber(row.co2_saved_kg),
+    distanceKm: totalDistanceMeters == null ? undefined : totalDistanceMeters / 1000,
+  };
+}
 
 function getCoordsForRidePlace(place: {
   lat?: number;
@@ -27,6 +187,26 @@ function getCoordsForRidePlace(place: {
   return null;
 }
 
+function mergeRides(primary: Ride[], fallback: Ride[]): Ride[] {
+  const seen = new Set(primary.map((ride) => ride.id));
+  return [...primary, ...fallback.filter((ride) => !seen.has(ride.id))];
+}
+
+async function loadDbRides(includeAllStatuses = false): Promise<Ride[]> {
+  let query = supabase
+    .from('rides')
+    .select('*, creator:user_profiles!rides_user_id_fkey(*)')
+    .order('created_at', { ascending: false });
+
+  if (!includeAllStatuses) query = query.eq('status', 'active');
+  const { data, error } = await query;
+  if (error) {
+    console.warn('Supabase rides query failed:', error.message);
+    return [];
+  }
+  return ((data ?? []) as DbRow[]).map((row) => mapRideRow(row));
+}
+
 export type SearchQuery = {
   pickup?: string;
   destination?: string;
@@ -39,16 +219,13 @@ export type SearchQuery = {
 
 export const rideService = {
   async getRides(query: SearchQuery = {}): Promise<Ride[]> {
-    await delay(300);
-    let rides = [...mockRides, ...createdRides];
+    const databaseRides = await loadDbRides(false);
+    let rides = mergeRides(databaseRides, [...createdRides, ...mockRides]);
 
     if (query.type) {
-      rides = rides.filter((r) => r.type === query.type);
+      rides = rides.filter((ride) => ride.type === query.type);
     }
 
-    // Nearby mode: use the actual device/search coordinate rather than an
-    // address string. Legacy rides without coordinates remain visible but
-    // unranked instead of being assigned a fabricated Hyderabad point.
     if (query.pickupCoordinates && !query.destinationCoordinates) {
       const origin = query.pickupCoordinates;
       rides = rides
@@ -90,7 +267,7 @@ export const rideService = {
         longitude: query.destinationCoordinates.longitude,
       };
       const userRoute = await fetchOSRMRoute(userPickup, userDrop);
-      const scoredPromises = rides.map(async (ride) => {
+      const scoredPromises: Promise<Ride | null>[] = rides.map(async (ride) => {
         const candidatePickup = getCoordsForRidePlace(ride.pickup);
         const candidateDrop = getCoordsForRidePlace(ride.destination);
         if (!candidatePickup || !candidateDrop) return null;
@@ -120,11 +297,11 @@ export const rideService = {
         };
       });
 
-      const scoredRides: (Ride | null)[] = await Promise.all(scoredPromises);
-      const matchedRides = scoredRides.filter((ride): ride is Ride => ride !== null);
-      if (matchedRides.length > 0) {
-        rides = matchedRides;
-        rides.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+      const scoredRides = (await Promise.all(scoredPromises)).filter(
+        (ride): ride is Ride => ride !== null
+      );
+      if (scoredRides.length > 0) {
+        rides = scoredRides.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
       }
     }
 
@@ -132,22 +309,41 @@ export const rideService = {
   },
 
   async getRideById(id: string): Promise<Ride | undefined> {
-    await delay(150);
-    return [...mockRides, ...createdRides].find((r) => r.id === id);
+    const local = [...createdRides, ...mockRides].find((ride) => ride.id === id);
+    if (local) return local;
+
+    const { data, error } = await supabase
+      .from('rides')
+      .select('*, creator:user_profiles!rides_user_id_fkey(*)')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) {
+      console.warn('Supabase ride lookup failed:', error.message);
+      return undefined;
+    }
+    return data ? mapRideRow(data as DbRow) : undefined;
   },
 
-  async requestRide(rideId: string): Promise<{ ok: boolean; status: 'pending' }> {
-    await delay(300);
-    return { ok: true, status: 'pending' };
+  async requestRide(rideId: string, requesterId: string): Promise<{ ok: boolean; status: 'pending' }> {
+    const { data, error } = await supabase.rpc('request_ride', {
+      p_ride_id: rideId,
+      p_requester_id: requesterId,
+    });
+    if (error) throw new Error(error.message);
+    const request = data as { status?: string } | null;
+    return { ok: request?.status === 'pending', status: 'pending' };
   },
 
-  async cancelRequest(_rideId: string): Promise<{ ok: boolean }> {
-    await delay(200);
-    return { ok: true };
+  async cancelRequest(rideId: string): Promise<{ ok: boolean }> {
+    const { error } = await supabase
+      .from('ride_requests')
+      .update({ status: 'cancelled' })
+      .eq('ride_id', rideId)
+      .eq('status', 'pending');
+    return { ok: !error };
   },
 
   async createRide(data: Partial<Ride>): Promise<{ ok: boolean; id: string }> {
-    await delay(400);
     const pickupLatitude = data.pickup?.lat ?? data.pickup?.latitude;
     const pickupLongitude = data.pickup?.lng ?? data.pickup?.longitude;
     const destinationLatitude = data.destination?.lat ?? data.destination?.latitude;
@@ -155,23 +351,48 @@ export const rideService = {
     if (
       !data.pickup ||
       !data.destination ||
+      !data.creator?.id ||
       typeof pickupLatitude !== 'number' ||
       typeof pickupLongitude !== 'number' ||
       typeof destinationLatitude !== 'number' ||
       typeof destinationLongitude !== 'number'
     ) {
-      throw new Error('Pickup and destination coordinates are required');
+      throw new Error('Pickup, destination, and a signed-in creator are required');
     }
 
-    const id = `r_new_${Date.now()}`;
+    const { data: inserted, error } = await supabase
+      .from('rides')
+      .insert({
+        user_id: data.creator.id,
+        ride_type: data.type ?? 'daily',
+        pickup_location: `POINT(${pickupLongitude} ${pickupLatitude})`,
+        dropoff_location: `POINT(${destinationLongitude} ${destinationLatitude})`,
+        pickup_address: data.pickup.address || data.pickup.label,
+        dropoff_address: data.destination.address || data.destination.label,
+        travel_time: toSupabaseTime(data.time),
+        return_time: toSupabaseTime(data.returnTime),
+        travel_date: data.date || null,
+        selected_days: dayLabelsToIndexes(data.days),
+        available_seats: Math.max(0, data.seatsAvailable ?? 1),
+        occupied_seats: 1,
+        price_per_seat: data.pricePerSeat ?? 0,
+        women_only: Boolean(data.womenOnly),
+        vehicle_kind: data.vehicle?.kind ?? null,
+        vehicle_model: data.vehicle?.model ?? null,
+        vehicle_plate: data.vehicle?.numberPlate ?? null,
+        status: data.status ?? 'active',
+        co2_saved_kg: data.co2Saved ?? null,
+      })
+      .select('id')
+      .single();
+
+    if (error) throw new Error(error.message);
+    const id = asString((inserted as DbRow | null)?.id);
+    if (!id) throw new Error('The ride was created without an id');
+
     const ride: Ride = {
       id,
-      creator: data.creator || {
-        id: 'local-user',
-        name: 'You',
-        phone: '',
-        verification: 'not_verified',
-      },
+      creator: data.creator,
       type: data.type || 'daily',
       pickup: data.pickup,
       destination: data.destination,
@@ -187,14 +408,17 @@ export const rideService = {
       status: data.status || 'active',
       co2Saved: data.co2Saved,
       tags: data.tags,
-      distanceKm: data.distanceKm,
     };
     createdRides.unshift(ride);
     return { ok: true, id };
   },
 
-  async getMyRides(): Promise<Ride[]> {
-    await delay(200);
-    return [...createdRides, ...mockRides].slice(0, 2);
+  async getMyRides(userId?: string): Promise<Ride[]> {
+    if (!userId) return [];
+    const databaseRides = await loadDbRides(true);
+    return mergeRides(
+      databaseRides.filter((ride) => ride.creator.id === userId),
+      createdRides.filter((ride) => ride.creator.id === userId)
+    );
   },
 };

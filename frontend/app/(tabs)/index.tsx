@@ -30,6 +30,7 @@ export default function Home() {
     user,
     access,
     showToast,
+    pendingRideRequestCount,
     locationFlowResult,
     clearLocationFlowResult,
   } = useApp();
@@ -269,7 +270,13 @@ export default function Home() {
 
           <Pressable style={styles.iconBtn} testID="notifications-button" onPress={() => router.push('/notifications')}>
             <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
-            <View style={styles.badge} />
+            {pendingRideRequestCount > 0 ? (
+              <View style={styles.badge} testID="notifications-badge">
+                <Text style={styles.badgeText}>
+                  {pendingRideRequestCount > 9 ? '9+' : pendingRideRequestCount}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
         </View>
 
@@ -600,7 +607,8 @@ const styles = StyleSheet.create({
   referBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primaryLight, paddingHorizontal: spacing.md, height: 34, borderRadius: radius.pill },
   referText: { color: colors.primary, fontSize: font.size.sm, fontWeight: font.weight.medium },
   iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
-  badge: { position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.error },
+  badge: { position: 'absolute', top: 4, right: 3, minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8, backgroundColor: colors.error, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.surface },
+  badgeText: { color: colors.textInverse, fontSize: 8, lineHeight: 10, fontWeight: font.weight.medium },
 
   hero: { flexDirection: 'row', alignItems: 'center', marginHorizontal: spacing.xl, marginTop: spacing.sm, backgroundColor: colors.primary, borderRadius: radius.lg, padding: spacing.lg, ...shadow.md },
 
