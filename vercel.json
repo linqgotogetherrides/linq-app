@@ -1,8 +1,8 @@
 {
   "installCommand": "cd frontend && npm install",
-  "buildCommand": "cd frontend && expo export -p web",
+  "buildCommand": "cd frontend && npx expo export -p web",
   "outputDirectory": "frontend/dist",
-  "devCommand": "cd frontend && expo",
+  "devCommand": "cd frontend && npx expo",
   "cleanUrls": true,
   "framework": null,
   "rewrites": [

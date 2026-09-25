@@ -1,7 +1,7 @@
 {
-  "buildCommand": "expo export -p web",
+  "buildCommand": "npx expo export -p web",
   "outputDirectory": "dist",
-  "devCommand": "expo",
+  "devCommand": "npx expo",
   "cleanUrls": true,
   "framework": null,
   "rewrites": [
