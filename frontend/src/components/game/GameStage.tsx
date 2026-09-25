@@ -40,9 +40,22 @@ type Props = {
   onFinish?: (state: GameState) => void;
   /** Exposed so the parent can drive lane changes from its own swipe handler. */
   controlRef?: React.MutableRefObject<((delta: -1 | 1) => void) | null>;
+  /**
+   * Reports the engine's own remaining time. The HUD must use this rather than
+   * wall-clock: the engine pauses when the app is backgrounded, so Date.now()
+   * would run the countdown down while the game was effectively frozen.
+   */
+  onTime?: (remainingMs: number) => void;
 };
 
-export default function GameStage({ seed, running, onEvent, onFinish, controlRef }: Props) {
+export default function GameStage({
+  seed,
+  running,
+  onEvent,
+  onFinish,
+  controlRef,
+  onTime,
+}: Props) {
   const { width, height } = useWindowDimensions();
   const roadWidth = Math.min(width - ROAD_INSET * 2, 460);
   const roadHeight = Math.max(360, height - 250);
@@ -60,6 +73,10 @@ export default function GameStage({ seed, running, onEvent, onFinish, controlRef
   const lastRef = useRef(0);
   const accumulatorRef = useRef(0);
   const finishedRef = useRef(false);
+  // Mirrors the last rendered pollution value so the loop never captures a
+  // stale one and starts calling setState on every single frame.
+  const pollutionRef = useRef(0);
+  const lastReportedTime = useRef(GAME_CONFIG.durationMs);
 
   // Structural list of entities, refreshed only when the set changes.
   const [entities, setEntities] = useState<RoadEntity[]>(engine.current.state.entities);
@@ -68,6 +85,23 @@ export default function GameStage({ seed, running, onEvent, onFinish, controlRef
   const lane = useSharedValue(engine.current.state.lanePosition);
   const shake = useSharedValue(0);
   const [pollution, setPollution] = useState(0);
+
+  // A new seed means a brand new run. Without this, the previous run's state
+  // (distance, seats, remaining time) leaked into the next attempt.
+  useEffect(() => {
+    engine.current = createInitialState(seed, GAME_CONFIG.seatsRequired);
+    engine.current.state = { ...engine.current.state, phase: 'running' };
+    scroll.value = 0;
+    lane.value = engine.current.state.lanePosition;
+    shake.value = 0;
+    pollutionRef.current = 0;
+    setPollution(0);
+    setEntities([]);
+    lastRef.current = 0;
+    accumulatorRef.current = 0;
+    finishedRef.current = false;
+    lastReportedTime.current = GAME_CONFIG.durationMs;
+  }, [seed, scroll, lane, shake]);
 
   const applyDelta = useCallback((delta: -1 | 1) => {
     const next = moveLane(engine.current!.state, delta);
@@ -84,6 +118,15 @@ export default function GameStage({ seed, running, onEvent, onFinish, controlRef
   // Main loop -------------------------------------------------------------
   useEffect(() => {
     if (!running) return;
+
+    const store = engine.current!;
+    // The engine is created in the 'idle' phase; tick() ignores anything that
+    // is not 'running', so without this the very first frame looks "finished"
+    // and the player loses instantly.
+    if (store.state.phase === 'idle') {
+      store.state = { ...store.state, phase: 'running' };
+    }
+
     finishedRef.current = false;
     lastRef.current = 0;
     accumulatorRef.current = 0;
@@ -119,7 +162,7 @@ export default function GameStage({ seed, running, onEvent, onFinish, controlRef
           }
         }
         if (state.entities !== result.state.entities) structuralChange = true;
-        if (state.phase !== 'running') {
+        if (state.phase === 'won' || state.phase === 'lost') {
           store.state = state;
           break;
         }
@@ -127,14 +170,22 @@ export default function GameStage({ seed, running, onEvent, onFinish, controlRef
 
       store.state = state;
       scroll.value = state.distance;
-      if (structuralChange || state.entities.length !== entities.length) {
+      if (structuralChange) {
         setEntities(state.entities.slice());
       }
-      if (Math.abs(state.pollution - pollution) > 0.05) {
+      if (Math.abs(state.pollution - pollutionRef.current) > 0.05) {
+        pollutionRef.current = state.pollution;
         setPollution(state.pollution);
       }
 
-      if (state.phase !== 'running' && !finishedRef.current) {
+      if (Math.abs(state.timeRemainingMs - lastReportedTime.current) > 150) {
+        lastReportedTime.current = state.timeRemainingMs;
+        onTime?.(state.timeRemainingMs);
+      }
+
+      // Only a genuine win or loss ends the run. Any other phase here would
+      // report a result the player never actually played.
+      if ((state.phase === 'won' || state.phase === 'lost') && !finishedRef.current) {
         finishedRef.current = true;
         onFinish?.(state);
         return;

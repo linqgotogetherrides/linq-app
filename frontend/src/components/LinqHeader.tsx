@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { colors, spacing, font, layout } from '@/src/theme/tokens';
 
 interface Props {
@@ -10,18 +10,46 @@ interface Props {
   right?: React.ReactNode;
   showBack?: boolean;
   transparent?: boolean;
+  /**
+   * Where to go when there is nothing to pop.
+   *
+   * Screens are sometimes reached with router.replace() (for example leaving
+   * the game for the referral page so Back does not bounce the player straight
+   * back into the game). In that case router.back() has no history to consume
+   * and silently does nothing, which looks like a missing back button.
+   */
+  fallbackHref?: Href;
 }
 
-export default function LinqHeader({ title, onBack, right, showBack = true, transparent }: Props) {
+export default function LinqHeader({
+  title,
+  onBack,
+  right,
+  showBack = true,
+  transparent,
+  fallbackHref = '/(tabs)' as Href,
+}: Props) {
   const router = useRouter();
+
+  const goBack = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
+    if (router.canGoBack()) router.back();
+    else router.replace(fallbackHref);
+  };
+
   return (
     <View style={[styles.row, transparent && { backgroundColor: 'transparent' }]}>
       {showBack ? (
         <Pressable
           testID="header-back-button"
-          onPress={onBack ?? (() => router.back())}
+          onPress={goBack}
           hitSlop={12}
           style={styles.back}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </Pressable>

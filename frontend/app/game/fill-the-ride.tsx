@@ -81,6 +81,9 @@ export default function FillTheRide() {
 
   const finish = useCallback(
     async (state: GameState) => {
+      // Defensive: only a real win or loss should ever settle a run.
+      if (state.phase !== 'won' && state.phase !== 'lost') return;
+
       const durationMs = Date.now() - startedAt.current;
       const won = state.phase === 'won';
       setLastRun({ won, seats: state.seats, score: Math.round(state.score) });
@@ -107,6 +110,22 @@ export default function FillTheRide() {
     }
   }, []);
 
+  // The engine owns the clock. Using wall-clock here desynced the HUD from the
+  // game whenever the app was briefly backgrounded.
+  const onTime = useCallback((remainingMs: number) => {
+    setHud((h) => (Math.abs(h.time - remainingMs) > 100 ? { ...h, time: remainingMs } : h));
+  }, []);
+
+  /**
+   * Leave the game without bouncing the player back into it.
+   * replace() drops the game screen, so Back from the next screen goes
+   * somewhere useful instead of straight back here.
+   */
+  const exitGame = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)');
+  }, [router]);
+
   // Swipe controls.
   const pan = useRef(
     PanResponder.create({
@@ -128,14 +147,13 @@ export default function FillTheRide() {
     }),
   ).current;
 
-  // Tick the clock display from the engine via a lightweight interval.
+  // The countdown is driven by the engine via onTime; this only covers the
+  // brief window between starting and the first frame.
   useEffect(() => {
     if (phase !== 'playing') return;
     const id = setInterval(() => {
-      const elapsed = Date.now() - startedAt.current;
-      const remaining = Math.max(0, GAME_CONFIG.durationMs - elapsed);
-      setHud((h) => (Math.abs(h.time - remaining) > 120 ? { ...h, time: remaining } : h));
-    }, 150);
+      setHud((h) => (h.time <= 0 ? h : h));
+    }, 1000);
     return () => clearInterval(id);
   }, [phase]);
 
@@ -170,10 +188,25 @@ export default function FillTheRide() {
               onEvent={onEvent}
               onFinish={finish}
               controlRef={controlRef}
+              onTime={onTime}
             />
           </>
         ) : (
           <View style={styles.screenBody}>
+            <View style={styles.menuBar}>
+              <Pressable
+                style={styles.menuBack}
+                onPress={exitGame}
+                hitSlop={12}
+                testID="game-back-button"
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+              >
+                <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+              </Pressable>
+              <Text style={styles.menuTitle}>Fill the Ride</Text>
+              <View style={{ width: 40 }} />
+            </View>
             {phase === 'start' && (
               <StartScreen
                 lives={game.lives}
@@ -181,7 +214,7 @@ export default function FillTheRide() {
                 balance={balance}
                 busy={busy}
                 onStart={() => void begin()}
-                onRefer={() => router.push('/referral')}
+                onRefer={() => router.replace('/referral')}
               />
             )}
             {phase === 'tutorial' && (
@@ -195,7 +228,7 @@ export default function FillTheRide() {
             {phase === 'outOfLives' && (
               <OutOfLivesScreen
                 wins={game.wins}
-                onRefer={() => router.push('/referral')}
+                onRefer={() => router.replace('/referral')}
                 onClose={() => router.back()}
               />
             )}
@@ -210,8 +243,8 @@ export default function FillTheRide() {
             wins={game.wins}
             lastRun={lastRun}
             onAgain={() => void begin()}
-            onRefer={() => router.push('/referral')}
-            onClose={() => router.push('/referral')}
+            onRefer={() => router.replace('/referral')}
+            onClose={() => router.replace('/referral')}
             onMilestone={() => router.push('/game/milestone')}
           />
         )}
@@ -467,6 +500,20 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, backgroundColor: colors.background },
   screenBody: { flex: 1, backgroundColor: colors.background },
+  menuBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.background,
+  },
+  menuBack: { width: 40, alignItems: 'flex-start' },
+  menuTitle: {
+    fontSize: font.size.xl,
+    color: colors.textPrimary,
+    fontWeight: font.weight.medium,
+  },
   panel: { padding: spacing.xl, paddingBottom: 60, paddingTop: spacing.xl, alignItems: 'stretch' },
   heroWrap: { alignItems: 'center', marginVertical: spacing.lg },
   startTitle: {
