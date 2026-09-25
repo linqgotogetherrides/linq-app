@@ -124,7 +124,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isAuthed, setIsAuthed] = useState(false);
   const [confirmResult, setConfirmResult] = useState<any>(null);
   const [access, setAccess] = useState<AccessState>(defaultAccess);
-  const [walletBalance, setWalletBalance] = useState(0);
   const [rewardBalance, setRewardBalance] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [locationFlowResult, setLocationFlowResult] = useState<LocationFlowResult | null>(null);
@@ -346,8 +345,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshRideActivity, rideRequests, showToast, user?.id]);
 
-  const addToWallet = useCallback((amount: number) => {
-    setWalletBalance((b) => b + amount);
+  // The wallet is now owned by WalletContext (persisted in Supabase). These
+  // access limits stay in memory on purpose: they are per-device session limits.
+  const addToWallet = useCallback((_amount: number) => {
+    // Intentionally a no-op here. Balance mutations must go through
+    // WalletContext so they are persisted; use creditWallet() instead.
   }, []);
 
   const spendReward = useCallback((amount: number) => {
@@ -361,7 +363,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       value={{
         user, setUser, isAuthed, setIsAuthed, confirmResult, setConfirmResult,
         access, useRequest, useChat, upgradePlan, singleUnlock,
-        walletBalance, rewardBalance, addToWallet, spendReward,
+        walletBalance: 0, rewardBalance, addToWallet, spendReward,
         toast, showToast, fetchUserProfile, refreshUser,
         saveUserLocation, locationFlowResult, setLocationFlowResult, clearLocationFlowResult,
         rideRequests, rideNotifications,

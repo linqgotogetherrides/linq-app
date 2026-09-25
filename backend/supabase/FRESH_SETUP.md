@@ -15,6 +15,15 @@
 8. Deploy `create-razorpay-order`, `verify-razorpay-payment`, `razorpay-callback`, and `razorpay-webhook` from `backend/supabase/functions/`. The callback and webhook must be deployed with JWT verification disabled because Razorpay calls them without a Supabase user session.
 9. The payment Edge Functions insert `created` rows and change them to `verified` only after signature and Razorpay server-side payment checks succeed. The frontend calls Supabase Functions directly and does not need the FastAPI payment endpoints or a backend service-role key.
 10. The current client uses Firebase UIDs with the Supabase anon client, so the bootstrap script enables deliberately permissive anon/authenticated policies. Replace those policies with server-verified policies before production.
+11. The SOS safety system ships as its own migrations and Edge Functions. After the bootstrap, apply and deploy it, then follow `docs/SOS_SETUP.md`:
+    - `supabase db push --linked`
+    - `supabase secrets set SOS_TRACKING_SECRET="$(openssl rand -hex 32)"`
+    - `supabase functions deploy sos-activate --no-verify-jwt`
+    - `supabase functions deploy sos-location --no-verify-jwt`
+    - `supabase functions deploy sos-end --no-verify-jwt`
+    - `supabase functions deploy sos-evidence --no-verify-jwt`
+    - `supabase functions deploy sos-admin --no-verify-jwt`
+    - promote at least one account with `update public.user_profiles set app_role='admin' where id = '<uid>';`
 
 The old Supabase project/account cannot be deleted with SQL. Back it up first, then delete it from **Supabase Dashboard → Project Settings → General → Delete project**.
 

@@ -24,11 +24,12 @@ type RidesTab = 'posted' | 'accepted';
 
 export default function Rides() {
   const router = useRouter();
-  const { user, rideRequests } = useApp();
+  const { user, rideRequests, showToast } = useApp();
   const [activeTab, setActiveTab] = useState<RidesTab>('posted');
   const [rides, setRides] = useState<Ride[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [busyRideId, setBusyRideId] = useState<string | null>(null);
 
   const loadRides = useCallback(async () => {
     if (!user?.id) {
@@ -63,6 +64,32 @@ export default function Rides() {
     () => rides.filter((ride) => acceptedByRide.has(ride.id)),
     [acceptedByRide, rides]
   );
+
+  const handlePublishDraft = async (ride: Ride) => {
+    if (!user?.id) return;
+    setBusyRideId(ride.id);
+    const result = await rideService.publishDraft(ride.id, user.id);
+    setBusyRideId(null);
+    if (result.ok) {
+      showToast('Ride published. It is now visible to riders on your route.');
+      await loadRides();
+    } else {
+      showToast('Could not publish this draft.');
+    }
+  };
+
+  const handleDeleteDraft = async (ride: Ride) => {
+    if (!user?.id) return;
+    setBusyRideId(ride.id);
+    const result = await rideService.deleteRide(ride.id, user.id);
+    setBusyRideId(null);
+    if (result.ok) {
+      showToast('Draft deleted.');
+      await loadRides();
+    } else {
+      showToast('Could not delete this draft.');
+    }
+  };
 
   if (!user) {
     return (
@@ -146,7 +173,14 @@ export default function Rides() {
               key={ride.id}
               ride={ride}
               acceptedRequest={activeTab === 'accepted' ? acceptedByRide.get(ride.id) : undefined}
-              onPress={() => router.push(`/ride/${ride.id}`)}
+              busy={busyRideId === ride.id}
+              onPress={() => {
+                // Drafts are not live, so tapping one opens the editor instead.
+                if (ride.status === 'draft') router.push('/create-ride');
+                else router.push(`/ride/${ride.id}`);
+              }}
+              onPublish={ride.status === 'draft' ? () => void handlePublishDraft(ride) : undefined}
+              onDelete={ride.status === 'draft' ? () => void handleDeleteDraft(ride) : undefined}
             />
           ))
         )}
@@ -158,12 +192,19 @@ export default function Rides() {
 function RideManagementCard({
   ride,
   acceptedRequest,
+  busy,
   onPress,
+  onPublish,
+  onDelete,
 }: {
   ride: Ride;
   acceptedRequest?: RideRequest;
+  busy?: boolean;
   onPress: () => void;
+  onPublish?: () => void;
+  onDelete?: () => void;
 }) {
+  const isDraft = ride.status === 'draft';
   const confirmed = ride.status === 'confirmed' || Boolean(acceptedRequest);
   const schedule = [ride.time, ride.date].filter(Boolean).join(' • ');
 
@@ -171,17 +212,47 @@ function RideManagementCard({
     <Pressable
       testID={`my-ride-card-${ride.id}`}
       onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      style={({ pressed }) => [
+        styles.card,
+        isDraft && styles.cardDraft,
+        pressed && styles.cardPressed,
+      ]}
     >
       <View style={styles.cardHeader}>
-        <View style={[styles.statusBadge, confirmed ? styles.statusBadgeConfirmed : styles.statusBadgeActive]}>
+        <View
+          style={[
+            styles.statusBadge,
+            isDraft
+              ? styles.statusBadgeDraft
+              : confirmed
+                ? styles.statusBadgeConfirmed
+                : styles.statusBadgeActive,
+          ]}
+        >
           <Ionicons
-            name={confirmed ? 'checkmark-circle' : 'radio-button-on'}
+            name={
+              isDraft
+                ? 'document-text-outline'
+                : confirmed
+                  ? 'checkmark-circle'
+                  : 'radio-button-on'
+            }
             size={13}
-            color={confirmed ? colors.success : colors.primary}
+            color={isDraft ? colors.textSecondary : confirmed ? colors.success : colors.primary}
           />
-          <Text style={[styles.statusText, { color: confirmed ? colors.success : colors.primary }]}>
-            {confirmed ? 'Confirmed' : 'Posted'}
+          <Text
+            style={[
+              styles.statusText,
+              {
+                color: isDraft
+                  ? colors.textSecondary
+                  : confirmed
+                    ? colors.success
+                    : colors.primary,
+              },
+            ]}
+          >
+            {isDraft ? 'Draft' : confirmed ? 'Confirmed' : 'Posted'}
           </Text>
         </View>
         <Text style={styles.typeText}>{ride.type.toUpperCase()}</Text>
@@ -228,18 +299,52 @@ function RideManagementCard({
         </View>
       ) : null}
 
-      <View style={styles.cardFooter}>
-        <View style={styles.footerMetric}>
-          <Ionicons name="people-outline" size={15} color={colors.textSecondary} />
-          <Text style={styles.footerText}>
-            {ride.seatsAvailable} {ride.seatsAvailable === 1 ? 'seat' : 'seats'} available
-          </Text>
+      {isDraft ? (
+        <>
+          <View style={styles.draftNote} testID={`draft-note-${ride.id}`}>
+            <Ionicons name="information-circle" size={14} color={colors.textSecondary} />
+            <Text style={styles.draftNoteText}>
+              This ride is saved as a draft. It is not visible to other riders until you
+              publish it.
+            </Text>
+          </View>
+          <View style={styles.draftActions}>
+            <Pressable
+              style={[styles.draftAction, styles.draftActionGhost]}
+              onPress={onDelete}
+              disabled={busy}
+              testID={`delete-draft-${ride.id}`}
+            >
+              <Ionicons name="trash-outline" size={15} color={colors.error} />
+              <Text style={[styles.draftActionText, { color: colors.error }]}>Delete</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.draftAction, styles.draftActionPrimary]}
+              onPress={onPublish}
+              disabled={busy}
+              testID={`publish-draft-${ride.id}`}
+            >
+              <Ionicons name="paper-plane" size={15} color={colors.textInverse} />
+              <Text style={[styles.draftActionText, { color: colors.textInverse }]}>
+                {busy ? 'Publishing…' : 'Publish'}
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <View style={styles.cardFooter}>
+          <View style={styles.footerMetric}>
+            <Ionicons name="people-outline" size={15} color={colors.textSecondary} />
+            <Text style={styles.footerText}>
+              {ride.seatsAvailable} {ride.seatsAvailable === 1 ? 'seat' : 'seats'} available
+            </Text>
+          </View>
+          {ride.pricePerSeat > 0 ? (
+            <Text style={styles.price}>₹{ride.pricePerSeat.toFixed(0)}/seat</Text>
+          ) : null}
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
         </View>
-        {ride.pricePerSeat > 0 ? (
-          <Text style={styles.price}>₹{ride.pricePerSeat.toFixed(0)}/seat</Text>
-        ) : null}
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-      </View>
+      )}
     </Pressable>
   );
 }
@@ -305,6 +410,30 @@ const styles = StyleSheet.create({
     ...shadow.sm,
   },
   cardPressed: { opacity: 0.88 },
+  cardDraft: { borderStyle: 'dashed', borderColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary },
+  statusBadgeDraft: { backgroundColor: colors.surfaceTertiary },
+  draftNote: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  draftNoteText: { flex: 1, fontSize: font.size.xs, color: colors.textSecondary, lineHeight: 16 },
+  draftActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  draftAction: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  draftActionPrimary: { backgroundColor: colors.primary },
+  draftActionGhost: { borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.surface },
+  draftActionText: { fontSize: font.size.sm, fontWeight: font.weight.medium },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',

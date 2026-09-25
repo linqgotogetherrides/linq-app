@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
+import { useWallet } from '@/src/context/WalletContext';
 import { signOut } from '@/src/lib/auth';
 import GuestPrompt from '@/src/components/GuestPrompt';
 import NotificationButton from '@/src/components/NotificationButton';
@@ -47,6 +48,13 @@ const sections: { title: string; rows: Row[] }[] = [
 export default function Profile() {
   const router = useRouter();
   const { user, setUser, setIsAuthed } = useApp();
+  const { balance, refresh: refreshWallet } = useWallet();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void refreshWallet();
+    }, [refreshWallet]),
+  );
 
   if (!user) {
     return (
@@ -83,14 +91,27 @@ export default function Profile() {
         <View style={styles.heroBg}>
           <View style={styles.heroTop}>
             <Text style={styles.heroTitle}>Profile</Text>
-            <View style={styles.heroActions}>
-              <NotificationButton testID="profile-notifications-button" onDark />
-              <Pressable testID="edit-profile" onPress={() => router.push('/personal-info')}>
-                <Ionicons name="create-outline" size={22} color={colors.textInverse} />
-              </Pressable>
-            </View>
+            <NotificationButton testID="profile-notifications-button" onDark />
           </View>
         </View>
+
+        <Pressable
+          style={styles.walletCard}
+          onPress={() => router.push('/wallet')}
+          testID="profile-wallet-card"
+        >
+          <View style={styles.walletIcon}>
+            <Ionicons name="wallet" size={20} color={colors.primary} />
+          </View>
+          <View style={styles.walletCopy}>
+            <Text style={styles.walletLabel}>Wallet balance</Text>
+            <Text style={styles.walletAmount} testID="profile-wallet-balance">
+              ₹{balance.toFixed(2)}
+            </Text>
+          </View>
+          <Text style={styles.walletCta}>View</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </Pressable>
 
         <View style={styles.profileCard}>
           {user.avatarUrl ? (
@@ -167,6 +188,31 @@ const styles = StyleSheet.create({
   heroBg: { backgroundColor: colors.primary, height: 120, paddingHorizontal: spacing.xl },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing.md },
   heroActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  walletCard: {
+    marginHorizontal: spacing.xl,
+    marginTop: -44,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.md,
+  },
+  walletIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  walletCopy: { flex: 1 },
+  walletLabel: { fontSize: font.size.xs, color: colors.textSecondary },
+  walletAmount: { fontSize: font.size.xl, color: colors.textPrimary, fontWeight: font.weight.medium },
+  walletCta: { fontSize: font.size.xs, color: colors.primary, fontWeight: font.weight.medium },
   heroTitle: { fontSize: font.size['2xl'], color: colors.textInverse, fontWeight: font.weight.medium },
   profileCard: { marginHorizontal: spacing.xl, marginTop: -60, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: colors.border, ...shadow.md },
   avatar: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: colors.surface, marginTop: -50, backgroundColor: colors.surfaceSecondary },

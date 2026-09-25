@@ -101,6 +101,7 @@ export default function CreateRide() {
   const [model, setModel] = useState('');
   const [plate, setPlate] = useState('');
   const [published, setPublished] = useState(false);
+  const [publishedStatus, setPublishedStatus] = useState<'active' | 'draft'>('active');
   const [publishing, setPublishing] = useState(false);
   const [travelTime, setTravelTime] = useState(params.travelTime || '08:00 AM');
   const [returnTime, setReturnTime] = useState(params.returnTime || '06:00 PM');
@@ -212,18 +213,18 @@ export default function CreateRide() {
     });
   };
 
-  const publish = async () => {
+  const saveRide = async (status: 'active' | 'draft') => {
     if (!user) {
       router.replace('/onboarding');
-      return;
+      return false;
     }
     if (!pickup.trim() || !pickupCoordinates) {
       openLocationFlow('pickup');
-      return;
+      return false;
     }
     if (!destination.trim() || !destinationCoordinates) {
       openLocationFlow('drop');
-      return;
+      return false;
     }
 
     setPublishing(true);
@@ -255,26 +256,47 @@ export default function CreateRide() {
         seatsTotal: Math.max(1, passengers.length),
         seatsAvailable: Math.max(0, passengers.length - 1),
         womenOnly,
+        status,
       });
       setPublished(true);
-    } catch {
-      showToast('Could not publish the ride. Please try again.');
+      setPublishedStatus(status);
+      return true;
+    } catch (error) {
+      // Surface the real reason instead of a generic message.
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Could not publish the ride. Please try again.';
+      showToast(message);
+      return false;
     } finally {
       setPublishing(false);
     }
   };
+
+  const publish = () => saveRide('active');
+  const saveDraft = () => saveRide('draft');
 
   if (!user) {
     return <Redirect href="/onboarding" />;
   }
 
   if (published) {
+    const isDraft = publishedStatus === 'draft';
     return (
       <SafeAreaView style={styles.container} testID="ride-published-screen">
         <View style={styles.successWrap}>
-          <View style={styles.successCircle}><Ionicons name="checkmark" size={64} color={colors.textInverse} /></View>
-          <Text style={styles.successTitle}>Ride Published Successfully</Text>
-          <Text style={styles.successSub}>Your ride is now live. Ride twins on your route can now request to join.</Text>
+          <View style={styles.successCircle}>
+            <Ionicons name={isDraft ? 'document-text' : 'checkmark'} size={64} color={colors.textInverse} />
+          </View>
+          <Text style={styles.successTitle}>
+            {isDraft ? 'Ride Saved as Draft' : 'Ride Published Successfully'}
+          </Text>
+          <Text style={styles.successSub}>
+            {isDraft
+              ? 'This ride is saved but not live yet. Publish it any time from Rides → Posted.'
+              : 'Your ride is now live. Ride twins on your route can now request to join.'}
+          </Text>
           <View style={{ alignSelf: 'stretch', marginTop: spacing['2xl'], gap: spacing.md }}>
             <PrimaryButton title="View My Rides" icon="car" onPress={() => router.replace('/(tabs)/rides')} />
             <PrimaryButton title="Back to Home" variant="secondary" onPress={() => router.replace('/(tabs)')} />
@@ -523,7 +545,20 @@ export default function CreateRide() {
             onPress={publish}
           />
           <View style={{ height: spacing.sm }} />
-          <PrimaryButton testID="save-draft-button" title="Save as Draft" variant="secondary" onPress={() => { showToast('Saved as draft'); router.replace('/(tabs)'); }} />
+          <PrimaryButton
+            testID="save-draft-button"
+            title={publishing ? 'Saving...' : 'Save as Draft'}
+            variant="secondary"
+            loading={publishing}
+            disabled={publishing}
+            onPress={async () => {
+              const ok = await saveDraft();
+              if (ok) {
+                showToast('Saved as draft. Find it under Rides → Posted.');
+                router.replace('/(tabs)/rides');
+              }
+            }}
+          />
         </View>
 
         <TimePickerModal

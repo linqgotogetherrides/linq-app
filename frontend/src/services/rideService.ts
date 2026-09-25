@@ -217,6 +217,16 @@ export type SearchQuery = {
   radiusMeters?: number;
 };
 
+/** `data.date` is often an empty string; Postgres rejects "" for a date column. */
+function toNullableDate(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  // Reject anything that is not ISO-ish so a bad value cannot 400 the insert.
+  if (!/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return null;
+  return trimmed.slice(0, 10);
+}
+
 export const rideService = {
   async getRides(query: SearchQuery = {}): Promise<Ride[]> {
     const databaseRides = await loadDbRides(false);
@@ -371,7 +381,7 @@ export const rideService = {
         dropoff_address: data.destination.address || data.destination.label,
         travel_time: toSupabaseTime(data.time),
         return_time: toSupabaseTime(data.returnTime),
-        travel_date: data.date || null,
+        travel_date: toNullableDate(data.date),
         selected_days: dayLabelsToIndexes(data.days),
         available_seats: Math.max(0, data.seatsAvailable ?? 1),
         occupied_seats: 1,
@@ -380,8 +390,7 @@ export const rideService = {
         vehicle_kind: data.vehicle?.kind ?? null,
         vehicle_model: data.vehicle?.model ?? null,
         vehicle_plate: data.vehicle?.numberPlate ?? null,
-        status: data.status ?? 'active',
-        co2_saved_kg: data.co2Saved ?? null,
+        status: data.status ?? 'active',        co2_saved_kg: data.co2Saved ?? null,
       })
       .select('id')
       .single();
@@ -420,5 +429,30 @@ export const rideService = {
       databaseRides.filter((ride) => ride.creator.id === userId),
       createdRides.filter((ride) => ride.creator.id === userId)
     );
+  },
+
+  /**
+   * Promotes a draft to a published ride (or republishes a cancelled one).
+   * Drafts are excluded from search and matching, so this single status change
+   * is what makes a draft discoverable.
+   */
+  async publishDraft(rideId: string, userId: string): Promise<{ ok: boolean }> {
+    const { error } = await supabase
+      .from('rides')
+      .update({ status: 'active' })
+      .eq('id', rideId)
+      .eq('user_id', userId)
+      .in('status', ['draft', 'cancelled']);
+    return { ok: !error };
+  },
+
+  async deleteRide(rideId: string, userId: string): Promise<{ ok: boolean }> {
+    const { error } = await supabase
+      .from('rides')
+      .delete()
+      .eq('id', rideId)
+      .eq('user_id', userId)
+      .eq('status', 'draft');
+    return { ok: !error };
   },
 };

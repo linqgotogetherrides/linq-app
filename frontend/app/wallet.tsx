@@ -6,12 +6,14 @@ import { useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
 import RazorpayCheckoutButton from '@/src/components/RazorpayCheckoutButton';
 import { useApp } from '@/src/context/AppContext';
+import { useWallet } from '@/src/context/WalletContext';
 import { mockTransactions } from '@/src/mock/data';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 export default function Wallet() {
   const router = useRouter();
-  const { walletBalance, rewardBalance, addToWallet, showToast } = useApp();
+  const { rewardBalance, showToast, user } = useApp();
+  const { balance, refresh: refreshWallet } = useWallet();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="wallet-screen">
@@ -20,7 +22,7 @@ export default function Wallet() {
         <View style={styles.balanceCard}>
           <View style={styles.decor} />
           <Text style={styles.balanceLabel}>Total Balance</Text>
-          <Text style={styles.balanceValue}>₹{walletBalance.toLocaleString('en-IN')}</Text>
+          <Text style={styles.balanceValue} testID="wallet-balance">₹{balance.toLocaleString('en-IN')}</Text>
           <View style={styles.balanceActions}>
             <RazorpayCheckoutButton
               style={styles.balanceBtn}
@@ -32,9 +34,32 @@ export default function Wallet() {
               description="Add ₹500 to your LinQ wallet"
               onError={showToast}
               textStyle={styles.balanceBtnText}
-              onSuccess={() => {
-                addToWallet(500);
-                showToast('₹500 added to wallet');
+              onSuccess={async (payment) => {
+                // The wallet is server-owned. Ask the backend to credit it after
+                // it independently verifies the payment, then refresh.
+                const paymentId = payment?.razorpay_payment_id;
+                if (!paymentId || !user?.id) {
+                  showToast('Payment completed. Balance will update shortly.');
+                  void refreshWallet();
+                  return;
+                }
+                try {
+                  const { supabase } = await import('@/src/lib/supabase');
+                  const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+                  const { error } = await supabase.functions.invoke('wallet-credit', {
+                    body: { user_id: user.id, razorpay_payment_id: paymentId },
+                    headers: { apikey: key, Authorization: `Bearer ${key}` },
+                  });
+                  if (error) throw error;
+                  await refreshWallet();
+                  showToast('₹500 added to wallet');
+                } catch (err) {
+                  showToast(
+                    err instanceof Error
+                      ? err.message
+                      : 'Payment received. Balance will update shortly.',
+                  );
+                }
               }}
             >
               <Ionicons name="add" size={16} color={colors.primary} />

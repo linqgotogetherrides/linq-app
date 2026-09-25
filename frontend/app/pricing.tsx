@@ -6,16 +6,39 @@ import { useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
 import RazorpayCheckoutButton from '@/src/components/RazorpayCheckoutButton';
 import { useApp } from '@/src/context/AppContext';
+import { useWallet } from '@/src/context/WalletContext';
+import GamePromoCard from '@/src/components/game/GamePromoCard';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 export default function Pricing() {
   const router = useRouter();
   const { access, upgradePlan, singleUnlock, showToast } = useApp();
+  const { balance } = useWallet();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="pricing-screen">
       <LinqHeader title="Pricing & Rewards" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.xl, paddingBottom: spacing['3xl'] }}>
+        <Pressable
+          style={styles.walletBanner}
+          onPress={() => router.push('/wallet')}
+          testID="pricing-wallet-card"
+        >
+          <View style={styles.walletIcon}>
+            <Ionicons name="wallet" size={20} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.walletLabel}>Available wallet balance</Text>
+            <Text style={styles.walletAmount} testID="pricing-wallet-balance">
+              ₹{balance.toFixed(2)}
+            </Text>
+          </View>
+          <Text style={styles.walletCta}>Top up</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </Pressable>
+
+        <GamePromoCard />
+
         <Text style={styles.intro}>Unlock more requests, start more chats, and connect with more travelers.</Text>
 
         {/* Early Access */}
@@ -173,6 +196,29 @@ function PlanFeature({ text }: { text: string }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   intro: { fontSize: font.size.base, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.lg },
+  walletBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    ...shadow.sm,
+  },
+  walletIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  walletLabel: { fontSize: font.size.xs, color: colors.textSecondary },
+  walletAmount: { fontSize: font.size.xl, color: colors.textPrimary, fontWeight: font.weight.medium },
+  walletCta: { fontSize: font.size.xs, color: colors.primary, fontWeight: font.weight.medium },
 
   earlyCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.border, ...shadow.sm },
   earlyHeader: { flexDirection: 'row', gap: spacing.md },

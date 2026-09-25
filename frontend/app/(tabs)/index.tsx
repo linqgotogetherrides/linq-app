@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -10,8 +10,10 @@ import SegmentedControl from '@/src/components/SegmentedControl';
 import RideCard from '@/src/components/RideCard';
 import TimePickerModal from '@/src/components/TimePickerModal';
 import DatePickerModal from '@/src/components/DatePickerModal';
-import PrimaryButton from '@/src/components/PrimaryButton';
 import EmptyState from '@/src/components/EmptyState';
+import SosHoldButton from '@/src/components/SosHoldButton';
+import SosActiveBanner from '@/src/components/sos/SosActiveBanner';
+import { useSos } from '@/src/context/SosContext';
 import { rideService } from '@/src/services/rideService';
 import { Ride, RideType } from '@/src/types';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
@@ -26,14 +28,8 @@ const DAY_PRESETS = [
 
 export default function Home() {
   const router = useRouter();
-  const {
-    user,
-    access,
-    showToast,
-    pendingRideRequestCount,
-    locationFlowResult,
-    clearLocationFlowResult,
-  } = useApp();
+  const { user, access, showToast, pendingRideRequestCount, locationFlowResult, clearLocationFlowResult } = useApp();
+  const { isActive: sosIsActive } = useSos();
   const {
     location: currentLocation,
     isLoading: isLocating,
@@ -126,7 +122,6 @@ export default function Home() {
   // Modals
   const [timePicker, setTimePicker] = useState<null | 'travel' | 'return'>(null);
   const [datePicker, setDatePicker] = useState(false);
-  const [sosModal, setSosModal] = useState(false);
 
   const openLocationFlow = (
     entry: 'pickup' | 'drop',
@@ -252,16 +247,14 @@ export default function Home() {
             </Pressable>
           </View>
 
-          {/* SOS Safety Button */}
-          <Pressable
-            style={styles.sosBtn}
-            testID="sos-button"
-            onPress={() => setSosModal(true)}
-            hitSlop={8}
-          >
-            <Ionicons name="shield-checkmark" size={18} color="#E53E3E" />
-            <Text style={styles.sosText}>SOS</Text>
-          </Pressable>
+          {/* SOS Safety Button - original pill styling, press-and-hold to fire. */}
+          {!sosIsActive ? (
+            <SosHoldButton
+              onComplete={() => router.push('/sos/confirm')}
+              disabled={!user}
+              testID="sos-button"
+            />
+          ) : null}
 
           <Pressable style={styles.referBtn} testID="refer-button" onPress={() => router.push('/referral')}>
             <Ionicons name="gift" size={14} color={colors.primary} />
@@ -279,6 +272,9 @@ export default function Home() {
             ) : null}
           </Pressable>
         </View>
+
+        {/* Persistent SOS state while an incident is active. */}
+        <SosActiveBanner />
 
         {/* Banner Hero */}
         <View style={[styles.hero, { padding: 0, backgroundColor: 'transparent', height: 120, overflow: 'hidden' }]}>
@@ -488,83 +484,6 @@ export default function Home() {
         </View>
       </ScrollView>
 
-      {/* SOS Action Sheet Modal */}
-      <Modal visible={sosModal} transparent animationType="slide">
-        <View style={styles.sosOverlay}>
-          <View style={styles.sosSheet}>
-            <View style={styles.sosSheetHeader}>
-              <View style={styles.sosBadgeIcon}>
-                <Ionicons name="shield-checkmark" size={24} color="#E53E3E" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sosTitle}>Safety & Emergency Options</Text>
-                <Text style={styles.sosSubtitle}>Quick actions to protect you during your commute.</Text>
-              </View>
-              <Pressable onPress={() => setSosModal(false)} hitSlop={12}>
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-
-            <View style={styles.sosOptionsList}>
-              <Pressable
-                style={[styles.sosActionRow, { backgroundColor: '#FFF5F5', borderColor: '#FEB2B2' }]}
-                onPress={() => {
-                  setSosModal(false);
-                  showToast('Initiating emergency assistance (112)...');
-                }}
-              >
-                <Ionicons name="call" size={20} color="#E53E3E" />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.sosActionTitle, { color: '#E53E3E' }]}>Emergency Call (112)</Text>
-                  <Text style={styles.sosActionSub}>Connect directly with emergency police services.</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#E53E3E" />
-              </Pressable>
-
-              <Pressable
-                style={styles.sosActionRow}
-                onPress={() => {
-                  setSosModal(false);
-                  showToast('Live trip location shared with trusted contacts.');
-                }}
-              >
-                <Ionicons name="share-social" size={20} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sosActionTitle}>Share Trip & Location</Text>
-                  <Text style={styles.sosActionSub}>Send real-time GPS link to trusted friends/family.</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </Pressable>
-
-              <Pressable
-                style={styles.sosActionRow}
-                onPress={() => {
-                  setSosModal(false);
-                  if (user?.emergencyContact) {
-                    showToast(`Contacting emergency contact: ${user.emergencyContact}`);
-                  } else {
-                    router.push('/emergency');
-                  }
-                }}
-              >
-                <Ionicons name="people" size={20} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sosActionTitle}>Emergency Contact</Text>
-                  <Text style={styles.sosActionSub}>
-                    {user?.emergencyContact ? `Call ${user.emergencyContact}` : 'Set up emergency contact profile'}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </Pressable>
-            </View>
-
-            <View style={{ marginTop: spacing.md }}>
-              <PrimaryButton title="Dismiss" variant="secondary" onPress={() => setSosModal(false)} />
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* Time Modals */}
       <TimePickerModal
         visible={timePicker !== null}
@@ -590,19 +509,6 @@ const styles = StyleSheet.create({
   greeting: { fontSize: font.size.lg, color: colors.textPrimary, fontWeight: font.weight.medium },
   locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 4 },
   location: { fontSize: font.size.sm, color: colors.textSecondary },
-
-  sosBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFF5F5',
-    borderWidth: 1,
-    borderColor: '#FEB2B2',
-    paddingHorizontal: spacing.sm,
-    height: 34,
-    borderRadius: radius.pill,
-  },
-  sosText: { color: '#E53E3E', fontSize: font.size.xs, fontWeight: font.weight.bold },
 
   referBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primaryLight, paddingHorizontal: spacing.md, height: 34, borderRadius: radius.pill },
   referText: { color: colors.primary, fontSize: font.size.sm, fontWeight: font.weight.medium },
@@ -671,14 +577,4 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: font.size.sm, color: colors.primary, fontWeight: font.weight.medium },
 
   // SOS Action Sheet Styles
-  sosOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sosSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.xl },
-  sosSheetHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
-  sosBadgeIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF5F5', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FEB2B2' },
-  sosTitle: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.textPrimary },
-  sosSubtitle: { fontSize: font.size.xs, color: colors.textSecondary, marginTop: 2 },
-  sosOptionsList: { gap: spacing.md },
-  sosActionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
-  sosActionTitle: { fontSize: font.size.base, fontWeight: font.weight.bold, color: colors.textPrimary },
-  sosActionSub: { fontSize: font.size.xs, color: colors.textSecondary, marginTop: 2 },
 });

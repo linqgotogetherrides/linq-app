@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Link } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { PENDING_REFERRAL_KEY } from '@/src/services/referralLink';
 import { useApp } from '@/src/context/AppContext';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import PrimaryButton from '@/src/components/PrimaryButton';
@@ -34,16 +36,36 @@ export default function Otp() {
       setLoading(true);
       const userCredential = await confirmResult.confirm(otp);
       const firebaseUser = userCredential.user;
-      
+
+      // A referral code from the invite link (?ref=…) is carried through signup
+      // and claimed after the profile row exists.
+      let refCode: string | null = null;
+      try {
+        const stored = await AsyncStorage.getItem(PENDING_REFERRAL_KEY);
+        if (stored) refCode = stored;
+      } catch {
+        refCode = null;
+      }
+      if (!refCode && typeof globalThis.location?.search === 'string') {
+        refCode = new URLSearchParams(globalThis.location.search).get('ref');
+      }
+
       // Check if user exists in Supabase
       const existingProfile = await fetchUserProfile(firebaseUser.uid);
-      
+
       if (existingProfile) {
         showToast('Welcome back!');
         router.replace('/(tabs)');
       } else {
         showToast('Phone verified successfully!');
-        router.replace({ pathname: '/account-creation', params: { uid: firebaseUser.uid, phone: firebaseUser.phoneNumber || '' } });
+        router.replace({
+          pathname: '/account-creation',
+          params: {
+            uid: firebaseUser.uid,
+            phone: firebaseUser.phoneNumber || '',
+            ...(refCode ? { ref: refCode } : {}),
+          },
+        });
       }
     } catch (e: any) {
       showToast(e.message || 'Invalid code. Please try again.');
