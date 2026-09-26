@@ -24,14 +24,13 @@ import {
   TrafficBike,
   TrafficCar,
 } from './GameArt';
-import { DEPTH_SCALE, GAME_CONFIG, ROAD_DASH_PX } from '@/src/lib/game/constants';
+import { GAME_CONFIG } from '@/src/lib/game/constants';
 import { createInitialState, moveLane, tick, FIXED_STEP_MS } from '@/src/lib/game/engine';
 import type { GameEvent, GameState, RoadEntity } from '@/src/lib/game/types';
 
-/** Camera distance in projected pixels. Entities at or behind it are hidden. */
-const CAMERA_Z = 300;
 const ROAD_INSET = 46;
 const PLAYER_Y_FROM_BOTTOM = 96;
+const SCALE = 0.12;
 const LANE_SPRING = { damping: 18, stiffness: 190, mass: 0.6 };
 
 type Props = {
@@ -59,7 +58,7 @@ export default function GameStage({
 }: Props) {
   const { width, height } = useWindowDimensions();
   const roadWidth = Math.min(width - ROAD_INSET * 2, 460);
-  const roadHeight = height;
+  const roadHeight = Math.max(360, height - 250);
   const laneWidth = roadWidth / GAME_CONFIG.lanes;
   const playerY = roadHeight - PLAYER_Y_FROM_BOTTOM;
 
@@ -215,14 +214,6 @@ export default function GameStage({
     transform: [{ translateX: shake.value * (shake.value > 0.5 ? 5 : -5) }],
   }));
 
-  // Screen-space scroll only. The road used to be tilted with rotateX while the
-  // cars were positioned by separate perspective maths, so the two vanishing
-  // points disagreed and cars drifted off the surface. The car projection is the
-  // complete one, so the road stays flat and just moves to convey motion.
-  const roadScrollStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: (scroll.value * DEPTH_SCALE) % ROAD_DASH_PX }],
-  }));
-
   return (
     <View style={styles.stage} testID="game-stage">
       <CityBackdrop width={width} height={height * 0.5} />
@@ -239,25 +230,7 @@ export default function GameStage({
           },
         ]}
       >
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              width: roadWidth,
-              // One extra dash of surface below the fold, so scrolling by a whole
-              // dash period never reveals an empty strip.
-              height: roadHeight + ROAD_DASH_PX,
-              bottom: -ROAD_DASH_PX,
-            },
-            roadScrollStyle,
-          ]}
-        >
-          <RoadSurface
-            width={roadWidth}
-            height={roadHeight + ROAD_DASH_PX}
-            lanes={GAME_CONFIG.lanes}
-          />
-        </Animated.View>
+        <RoadSurface width={roadWidth} height={roadHeight} lanes={GAME_CONFIG.lanes} />
 
         {entities.map((entity) => (
           <EntityView
@@ -306,27 +279,13 @@ const EntityView = memo(function EntityView({
 }) {
   const style = useAnimatedStyle(() => {
     const delta = entity.z - scroll.value;
-    const z = delta * DEPTH_SCALE;
-
-    // A single perspective divide from the player's position. At z = 0 this
-    // reduces exactly to the flat layout, so a car beside the player sits where
-    // the unprojected version put it and near-field play is unchanged.
-    const scale = z <= -CAMERA_Z ? 0 : CAMERA_Z / (CAMERA_Z + z);
-    const y = playerY * scale;
-    const centreX = (GAME_CONFIG.lanes * laneWidth) / 2;
-    const laneCentreX = entity.lane * laneWidth + laneWidth / 2;
-    const x = centreX + (laneCentreX - centreX) * scale - laneWidth / 2;
-
-    // Behind the camera, or already collected: hide it. Returned in the same
-    // shape as the normal case so Reanimated sees one consistent style object.
-    const hidden = z <= -CAMERA_Z || entity.cleared;
-
     return {
-      transform: [{ translateX: x }, { translateY: y }, { scale }],
-      // Fade in as it approaches the horizon rather than popping into existence.
-      opacity: hidden ? 0 : Math.min(1, scale * 2),
-      // No zIndex: entities are painted after the road, so they are already on
-      // top. A negative zIndex pushed them behind the road surface instead.
+      transform: [
+        // Anchor at the top of the entity's lane, then centre inside the lane.
+        { translateX: entity.lane * laneWidth },
+        { translateY: playerY - delta * SCALE },
+      ],
+      opacity: entity.cleared ? 0 : 1,
     };
   });
 
@@ -377,4 +336,4 @@ const styles = StyleSheet.create({
   player: { position: 'absolute', left: 0 },
 });
 
-export { DEPTH_SCALE, DEPTH_SCALE as SCALE, GAME_COLORS };
+export { SCALE, GAME_COLORS };

@@ -8,19 +8,6 @@ import type { GameConfig } from './types';
 
 export const ROAD_WIDTH = 3; // lanes
 
-/**
- * Screen pixels one unit of engine depth covers. The road scroll and the car
- * projection must agree, so both read it from here rather than repeating a
- * literal.
- */
-export const DEPTH_SCALE = 0.12 * 5;
-
-/**
- * Dash spacing used by RoadSurface. The road scroll wraps on this period, so
- * changing the art without changing this would make the loop jump.
- */
-export const ROAD_DASH_PX = 64;
-
 export const GAME_CONFIG: GameConfig = {
   lanes: 3,
   // Tuned so a CLEAN run reaches the finish in ~18s, leaving ~12s of margin
