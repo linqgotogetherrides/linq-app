@@ -18,6 +18,7 @@ import GuestPrompt from '@/src/components/GuestPrompt';
 import NotificationButton from '@/src/components/NotificationButton';
 import { useApp } from '@/src/context/AppContext';
 import { rideService } from '@/src/services/rideService';
+import { expiryReason } from '@/src/lib/rideSchedule';
 import { Ride, RideRequest } from '@/src/types';
 import { colors, font, radius, shadow, spacing } from '@/src/theme/tokens';
 
@@ -97,6 +98,45 @@ export default function Rides() {
   };
 
   const [pendingDelete, setPendingDelete] = useState<Ride | null>(null);
+
+  /** A scheduled ride whose date and time have both passed. */
+  const isExpired = (ride: Ride) => expiryReason(ride) === 'date_passed';
+
+  /** Every seat taken but the post is still listed, so it needs an answer. */
+  const isFilled = (ride: Ride) =>
+    ride.status === 'active' && ride.seatsAvailable <= 0;
+
+  const handleClosePost = async (ride: Ride) => {
+    if (!user?.id) return;
+    setBusyRideId(ride.id);
+    const result = await rideService.updateOwnRide(ride.id, user.id, {
+      status: 'cancelled',
+    });
+    setBusyRideId(null);
+    if (result.ok) {
+      showToast('Ride post closed.');
+      await loadRides();
+    } else {
+      showToast(result.error ?? 'Could not close this post.');
+    }
+  };
+
+  const handleKeepOpen = async (ride: Ride) => {
+    if (!user?.id) return;
+    setBusyRideId(ride.id);
+    // Keep the post listed and open one more seat so it can still receive
+    // requests. The owner stays in control of when it really ends.
+    const result = await rideService.updateOwnRide(ride.id, user.id, {
+      seatsAvailable: 1,
+    });
+    setBusyRideId(null);
+    if (result.ok) {
+      showToast('Post stays open with one more seat.');
+      await loadRides();
+    } else {
+      showToast(result.error ?? 'Could not update this post.');
+    }
+  };
 
   const handleDeleteRide = (ride: Ride) => {
     setPendingDelete(ride);
@@ -231,6 +271,24 @@ export default function Rides() {
               onSearchAgain={
                 ride.status === 'draft' ? undefined : () => handleSearchAgain(ride)
               }
+              expired={isExpired(ride)}
+              filled={isFilled(ride)}
+              onClosePost={
+                ride.status === 'draft' || ride.status === 'cancelled'
+                  ? undefined
+                  : () => void handleClosePost(ride)
+              }
+              onKeepOpen={
+                ride.status === 'draft' || ride.status === 'cancelled'
+                  ? undefined
+                  : () => void handleKeepOpen(ride)
+              }
+              onPostAnother={() =>
+                router.push({
+                  pathname: '/create-ride',
+                  params: { fromRideId: ride.id },
+                })
+              }
             />
           ))
         )}
@@ -264,6 +322,11 @@ function RideManagementCard({
   onEdit,
   onDeleteRide,
   onSearchAgain,
+  expired,
+  filled,
+  onClosePost,
+  onKeepOpen,
+  onPostAnother,
 }: {
   ride: Ride;
   acceptedRequest?: RideRequest;
@@ -274,6 +337,13 @@ function RideManagementCard({
   onEdit?: () => void;
   onDeleteRide?: () => void;
   onSearchAgain?: () => void;
+  /** The scheduled date and time have both passed. */
+  expired?: boolean;
+  /** Every seat is taken; the owner still has to decide what happens next. */
+  filled?: boolean;
+  onClosePost?: () => void;
+  onKeepOpen?: () => void;
+  onPostAnother?: () => void;
 }) {
   const isDraft = ride.status === 'draft';
   const confirmed = ride.status === 'confirmed' || Boolean(acceptedRequest);
@@ -416,6 +486,63 @@ function RideManagementCard({
             ) : null}
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </View>
+
+          {expired ? (
+            <View style={[styles.notice, styles.noticeClosed]} testID={`ride-expired-${ride.id}`}>
+              <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.noticeTitle}>Your ride post is closed</Text>
+                <Text style={styles.noticeBody}>
+                  The selected travel date and time have passed, so this post no longer
+                  takes requests.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {filled ? (
+            <View style={[styles.notice, styles.noticeFilled]} testID={`ride-filled-${ride.id}`}>
+              <Ionicons name="people-outline" size={16} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.noticeTitle}>All seats are filled</Text>
+                <Text style={styles.noticeBody}>
+                  Close this post, or keep it listed to hear from more riders.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {expired && onPostAnother ? (
+            <View style={styles.manageRow}>
+              <ManageAction
+                icon="add-circle-outline"
+                label="Post another ride"
+                onPress={onPostAnother}
+                testID={`post-another-${ride.id}`}
+              />
+            </View>
+          ) : null}
+
+          {!expired && filled && (onClosePost || onKeepOpen) ? (
+            <View style={styles.manageRow}>
+              {onClosePost ? (
+                <ManageAction
+                  icon="checkmark-done-outline"
+                  label="Close this post"
+                  onPress={onClosePost}
+                  testID={`close-post-${ride.id}`}
+                />
+              ) : null}
+              {onKeepOpen ? (
+                <ManageAction
+                  icon="megaphone-outline"
+                  label="Keep open for more"
+                  onPress={onKeepOpen}
+                  testID={`keep-open-${ride.id}`}
+                />
+              ) : null}
+            </View>
+          ) : null}
 
           {onEdit || onDeleteRide || onSearchAgain ? (
             <View style={styles.manageRow} testID={`ride-manage-${ride.id}`}>
@@ -655,6 +782,33 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: font.weight.medium,
     marginTop: 1,
+  },
+  notice: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  noticeClosed: {
+    backgroundColor: colors.surfaceSecondary,
+    borderColor: colors.border,
+  },
+  noticeFilled: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+  },
+  noticeTitle: {
+    fontSize: font.size.sm,
+    fontWeight: font.weight.medium,
+    color: colors.textPrimary,
+  },
+  noticeBody: {
+    fontSize: font.size.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 16,
   },
   manageRow: {
     flexDirection: 'row',

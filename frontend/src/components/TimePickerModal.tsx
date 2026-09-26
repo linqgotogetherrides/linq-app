@@ -9,12 +9,25 @@ interface Props {
   value?: string;
   onClose: () => void;
   onSelect: (time: string) => void;
+  /**
+   * Minutes from midnight already in the past. Supplied when the ride is
+   * scheduled for today, so a departure time that has already gone cannot be
+   * chosen. Omitted for a future date, where every time is valid.
+   */
+  earliestMinutes?: number;
 }
 
 const HOURS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
 const MINUTES = ['00','15','30','45'];
 
-export default function TimePickerModal({ visible, title = 'Select time', value = '', onClose, onSelect }: Props) {
+export default function TimePickerModal({
+  visible,
+  title = 'Select time',
+  value = '',
+  onClose,
+  onSelect,
+  earliestMinutes,
+}: Props) {
   const [selectedHour, setSelectedHour] = useState('08');
   const [selectedMinute, setSelectedMinute] = useState('00');
   const [selectedMeridiem, setSelectedMeridiem] = useState('AM');
@@ -34,6 +47,10 @@ export default function TimePickerModal({ visible, title = 'Select time', value 
   }, [value, visible]);
 
   const handleConfirm = () => {
+    const hourValue = Number(selectedHour);
+    const as24 = (hourValue % 12) + (selectedMeridiem === 'PM' ? 12 : 0);
+    const total = as24 * 60 + Number(selectedMinute);
+    if (earliestMinutes != null && total < earliestMinutes) return;
     onSelect(`${selectedHour}:${selectedMinute} ${selectedMeridiem}`);
     onClose();
   };
@@ -111,6 +128,8 @@ const styles = StyleSheet.create({
   rowGrid: { flexDirection: 'row', gap: 8 },
   gridCell: { width: '15%', minWidth: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
   gridCellActive: { backgroundColor: colors.primary },
+  gridCellDisabled: { opacity: 0.35 },
+  gridCellTextDisabled: { color: colors.textTertiary },
   gridCellText: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium },
   gridCellTextActive: { color: colors.textInverse },
 

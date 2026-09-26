@@ -1,5 +1,6 @@
 import { supabase } from '@/src/lib/supabase';
 import { ensureUserProfile } from '@/src/services/userProfile';
+import { formatTravelDate, toIsoDate } from '@/src/lib/rideSchedule';
 import { fetchOSRMRoute, Coordinates } from '@/src/lib/routing/osrm';
 import { haversineDistanceKm } from '@/src/lib/routing/routeGeometry';
 import { scoreRideMatch, parseTimeToMinutes } from '@/src/lib/routing/routeScoring';
@@ -171,7 +172,9 @@ export function mapRideRow(row: DbRow, creatorRow?: DbRow | null): Ride {
       latitude: destinationPoint?.latitude,
       longitude: destinationPoint?.longitude,
     },
-    date: asString(row.travel_date) || undefined,
+    // The label is for display; the ISO value is what the schedule logic uses.
+    date: formatTravelDate(asString(row.travel_date)) || undefined,
+    dateISO: toIsoDate(asString(row.travel_date)),
     time: displayTime(row.travel_time),
     returnTime: displayTime(row.return_time),
     days: indexesToDayLabels(row.selected_days),
@@ -462,7 +465,10 @@ export const rideService = {
       type: data.type || 'daily',
       pickup: data.pickup,
       destination: data.destination,
-      date: data.date,
+      date: formatTravelDate(toIsoDate(data.date)) || data.date,
+      // A freshly created ride lives in memory until the next fetch, so it needs
+      // its own ISO value or the expiry check would treat it as open-ended.
+      dateISO: toIsoDate(data.date),
       time: data.time,
       returnTime: data.returnTime,
       days: data.days,

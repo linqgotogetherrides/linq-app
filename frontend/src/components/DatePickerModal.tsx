@@ -2,18 +2,31 @@ import React, { useState } from 'react';
 import { Modal, View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay } from 'date-fns';
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, isBefore, startOfDay } from 'date-fns';
 
 interface Props {
   visible: boolean;
   title?: string;
+  /** ISO yyyy-MM-dd. */
   value?: string;
   onClose: () => void;
+  /** Receives ISO yyyy-MM-dd, not a display label. */
   onSelect: (date: string) => void;
+  /** Past days are unselectable. Defaults to today. */
+  minimumDate?: Date;
 }
 
-export default function DatePickerModal({ visible, title = 'Select date', value, onClose, onSelect }: Props) {
+export default function DatePickerModal({
+  visible,
+  title = 'Select date',
+  value,
+  onClose,
+  onSelect,
+  minimumDate,
+}: Props) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  // A ride cannot be scheduled in the past, so today is the floor by default.
+  const floor = startOfDay(minimumDate ?? new Date());
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -21,13 +34,18 @@ export default function DatePickerModal({ visible, title = 'Select date', value,
   const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start: startDate, end: endDate });
 
-  const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+  // Stepping back is only allowed while it can still land on a valid month.
+  const handlePrevMonth = () => {
+    const previous = subMonths(currentMonth, 1);
+    if (isBefore(endOfMonth(previous), floor)) return;
+    setCurrentMonth(previous);
+  };
   const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
 
   const handleSelect = (date: Date) => {
-    // Format to string as expected by the caller (e.g. "Thu, 17 Aug" or similar)
-    const label = isSameDay(date, new Date()) ? `Today, ${format(date, 'd MMM')}` : format(date, 'EEE, d MMM');
-    onSelect(label);
+    // ISO, so the value survives a round trip to Postgres. Display formatting
+    // happens at render time, not here.
+    onSelect(format(date, 'yyyy-MM-dd'));
     onClose();
   };
 
@@ -57,18 +75,20 @@ export default function DatePickerModal({ visible, title = 'Select date', value,
           <View style={styles.daysGrid}>
             {days.map((day, i) => {
               const isCurrentMonth = isSameMonth(day, currentMonth);
-              const isSelected = value?.includes(format(day, 'd MMM')); // approximation
+              const isSelected = value === format(day, 'yyyy-MM-dd');
               const isToday = isSameDay(day, new Date());
+              const isPast = isBefore(startOfDay(day), floor);
               return (
                 <Pressable
                   key={i}
                   style={[styles.dayCell, isSelected && styles.dayCellActive]}
                   onPress={() => handleSelect(day)}
-                  disabled={!isCurrentMonth}
+                  disabled={!isCurrentMonth || isPast}
+                  testID={`date-day-${format(day, 'yyyy-MM-dd')}`}
                 >
                   <Text style={[
-                    styles.dayText, 
-                    !isCurrentMonth && styles.dayTextDisabled,
+                    styles.dayText,
+                    (!isCurrentMonth || isPast) && styles.dayTextDisabled,
                     isToday && !isSelected && styles.dayTextToday,
                     isSelected && styles.dayTextActive
                   ]}>

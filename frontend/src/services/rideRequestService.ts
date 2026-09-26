@@ -12,6 +12,8 @@ function mapNotificationType(type: string): Notification['type'] {
   if (type === 'ride_request') return 'request';
   if (type === 'request_accepted') return 'accepted';
   if (type === 'request_declined') return 'declined';
+  // The owner is told when a post closed because its date and time passed.
+  if (type === 'ride_closed') return 'closed';
   return 'system';
 }
 

@@ -102,6 +102,8 @@ export interface Ride {
   seatsAvailable: number;
   vehicle?: Vehicle;
   womenOnly?: boolean;
+  /** ISO yyyy-MM-dd of travelDate, kept alongside the display label. */
+  dateISO?: string;
   matchScore?: number;
   matchType?: MatchType;
   sharedDistanceKm?: number;
@@ -154,7 +156,7 @@ export interface Notification {
   title: string;
   body: string;
   time: string;
-  type: 'request' | 'accepted' | 'declined' | 'reminder' | 'reward' | 'system';
+  type: 'request' | 'accepted' | 'declined' | 'closed' | 'reminder' | 'reward' | 'system';
   read?: boolean;
   rideId?: string;
   requestId?: string;

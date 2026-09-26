@@ -41,6 +41,9 @@ function notificationAppearance(type: Notification['type']) {
   if (type === 'request') {
     return { icon: 'person-add' as const, color: colors.primary, background: colors.primaryLight };
   }
+  if (type === 'closed') {
+    return { icon: 'time' as const, color: colors.textSecondary, background: colors.surfaceSecondary };
+  }
   return { icon: 'notifications' as const, color: colors.primary, background: colors.primaryLight };
 }
 

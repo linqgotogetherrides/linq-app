@@ -18,6 +18,14 @@ import {
   suggestPricePerSeat,
   updateRideDraft,
 } from '@/src/lib/rideDraft';
+import {
+  formatTravelDate,
+  isDateBeforeToday,
+  isScheduleInPast,
+  isSameCalendarDay,
+  isTimeBeforeNow,
+  toIsoDate,
+} from '@/src/lib/rideSchedule';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -118,7 +126,12 @@ export default function CreateRide() {
   const [returnTime, setReturnTime] = useState<string>(
     draft?.returnTime || params.returnTime || '',
   );
-  const [travelDate, setTravelDate] = useState<string>(draft?.travelDate ?? '');
+  // ISO yyyy-MM-dd, not a label. Dates were previously kept as display strings
+  // ("Sat, 24 Aug") which the database write rejected, so travel_date was always
+  // stored as NULL and could never be compared against the clock.
+  const [travelDate, setTravelDate] = useState<string>(
+    toIsoDate(draft?.travelDate) ?? toIsoDate(params.travelDate) ?? '',
+  );
   const [passengers, setPassengers] = useState<{ name: string; sub: string; self?: boolean; data?: PassengerData }[]>([
     { name: 'Passenger 1', sub: 'Myself', self: true },
   ]);
@@ -133,6 +146,15 @@ export default function CreateRide() {
   // asked for or required. A rider offering seats must set one.
   const priceRequired = hasVehicle;
   const priceIsSet = price >= priceFloor;
+
+  // For a ride today, departure times already gone must not be selectable.
+  // A future date has no such restriction.
+  const earliestMinutes = React.useMemo(() => {
+    if (isDateBeforeToday(travelDate)) return 0;
+    if (travelDate && !isSameCalendarDay(travelDate, new Date())) return undefined;
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  }, [travelDate]);
 
   // Editing an existing post: load it once and prefill the form.
   const [editingRideId, setEditingRideId] = useState<string | null>(params.rideId ?? null);
@@ -161,7 +183,7 @@ export default function CreateRide() {
       }
       setTravelTime(existing.time ?? '');
       setReturnTime(existing.returnTime ?? '');
-      setTravelDate(existing.date || '');
+      setTravelDate(toIsoDate(existing.dateISO ?? existing.date) ?? '');
       setPrice(existing.pricePerSeat || 0);
       setRideType(existing.type === 'planned' ? 'planned' : 'daily');
       setWomenOnly(existing.womenOnly ?? false);
@@ -287,6 +309,16 @@ export default function CreateRide() {
   const saveRide = async (status: 'active' | 'draft') => {
     // A price of 0 is "not set", not free. Refuse to publish rather than write a
     // row that later renders as a bogus Rs 0 seat. Only riders are asked for one.
+    // A planned ride cannot be dated in the past. Daily rides recur, so only the
+    // time is checked for those.
+    if (travelDate && isScheduleInPast(travelDate, travelTime)) {
+      showToast('Choose a travel date and time that have not already passed.');
+      return;
+    }
+    if (!travelDate && travelTime && isTimeBeforeNow(travelTime)) {
+      showToast('Choose a travel time that has not already passed.');
+      return;
+    }
     if (priceRequired && !priceIsSet) {
       showToast('Set a price per seat before saving.');
       return;
@@ -540,7 +572,7 @@ export default function CreateRide() {
               </View>
             ) : (
               <View style={styles.timeGrid}>
-                <Pressable style={styles.timeBox} onPress={() => setDatePicker(true)}><Text style={styles.smallLabel}>Travel Date</Text><View style={styles.timeSelect}><Text style={styles.timeSelectText}>{travelDate}</Text><Ionicons name="chevron-down" size={14} color={colors.textSecondary} /></View></Pressable>
+                <Pressable style={styles.timeBox} onPress={() => setDatePicker(true)}><Text style={styles.smallLabel}>Travel Date</Text><View style={styles.timeSelect}><Text style={[styles.timeSelectText, !travelDate && styles.timeUnset]}>{formatTravelDate(travelDate) || 'Not set'}</Text><Ionicons name="chevron-down" size={14} color={colors.textSecondary} /></View></Pressable>
                 <Pressable style={styles.timeBox} onPress={() => setTimePicker('travel')}><Text style={styles.smallLabel}>Travel Time</Text><View style={styles.timeSelect}><Text style={styles.timeSelectText}>{travelTime}</Text><Ionicons name="chevron-down" size={14} color={colors.textSecondary} /></View></Pressable>
               </View>
             )}
@@ -698,6 +730,7 @@ export default function CreateRide() {
           visible={timePicker !== null}
           title={timePicker === 'return' ? 'Return time' : 'Travel time'}
           value={timePicker === 'return' ? returnTime : travelTime}
+          earliestMinutes={earliestMinutes}
           onClose={() => setTimePicker(null)}
           onSelect={(t) => { if (timePicker === 'return') setReturnTime(t); else setTravelTime(t); }}
         />
