@@ -14,7 +14,7 @@ import { colors, spacing, font, radius } from '@/src/theme/tokens';
 export default function Otp() {
   const router = useRouter();
   const { phone, next } = useLocalSearchParams<{ phone: string; next?: string }>();
-  const { confirmResult, showToast, fetchUserProfile } = useApp();
+  const { confirmResult, setOtpVerifiedUid, showToast, fetchUserProfile } = useApp();
   const [otp, setOtp] = useState('');
   const [remaining, setRemaining] = useState(60);
   const [loading, setLoading] = useState(false);
@@ -39,6 +39,8 @@ export default function Otp() {
       const safeNext = sanitizeNext(next);
       const userCredential = await confirmResult.confirm(otp);
       const firebaseUser = userCredential.user;
+      // The phone is now proven. Account creation trusts this, not a URL param.
+      setOtpVerifiedUid(firebaseUser.uid);
 
       // A referral code from the invite link (?ref=…) is carried through signup
       // and claimed after the profile row exists.

@@ -28,6 +28,16 @@ interface AppContextValue {
   booting: boolean;
   confirmResult: any;
   setConfirmResult: (res: any) => void;
+  /**
+   * The uid whose phone number was actually confirmed by a successful OTP
+   * check. Set only inside the OTP screen after confirm() resolves.
+   *
+   * Account creation must not trust a `uid` route param, because a crafted
+   * /account-creation?uid=anything link would otherwise skip verification
+   * entirely. This value cannot be supplied from a URL.
+   */
+  otpVerifiedUid: string | null;
+  setOtpVerifiedUid: (uid: string | null) => void;
   access: AccessState;
   useRequest: () => boolean;
   useChat: () => boolean;
@@ -135,6 +145,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const userRef = React.useRef<User | null>(null);
   userRef.current = user;
   const [confirmResult, setConfirmResult] = useState<any>(null);
+  const [otpVerifiedUid, setOtpVerifiedUid] = useState<string | null>(null);
   const [access, setAccess] = useState<AccessState>(defaultAccess);
   const [rewardBalance, setRewardBalance] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -446,7 +457,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider
       value={{
-        user, setUser, isAuthed, setIsAuthed, booting, confirmResult, setConfirmResult,
+        user, setUser, isAuthed, setIsAuthed, booting,
+        confirmResult, setConfirmResult, otpVerifiedUid, setOtpVerifiedUid,
         access, useRequest, useChat, upgradePlan, singleUnlock,
         walletBalance: 0, rewardBalance, addToWallet, spendReward,
         toast, showToast, fetchUserProfile, refreshUser,

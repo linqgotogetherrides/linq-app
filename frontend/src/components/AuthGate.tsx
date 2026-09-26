@@ -1,10 +1,11 @@
 import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 
+import LinqLogo from '@/src/components/LinqLogo';
 import { useApp } from '@/src/context/AppContext';
-import { isPublicRoute, sanitizeNext, withNext } from '@/src/lib/authNavigation';
-import { colors } from '@/src/theme/tokens';
+import { isPublicRoute, withNext } from '@/src/lib/authNavigation';
+import { colors, font, spacing } from '@/src/theme/tokens';
 
 /**
  * Global sign-in gate.
@@ -13,8 +14,14 @@ import { colors } from '@/src/theme/tokens';
  * screen had a "skip" and a "sign in later" button that both went straight to
  * the tabs, so the app was browsable without an account.
  *
- * The gate waits for `booting` before deciding, so a rider with a saved session
- * is not flashed the login screen while their profile loads.
+ * This also owns the splash. It used to be app/index.tsx, but that file and
+ * app/(tabs)/index.tsx both resolve to "/", which is a route conflict: the app
+ * opened on Home with no sign-up prompt at all. There is now exactly one "/"
+ * route, the tabs home, and this component covers the boot period, redirects a
+ * signed-out rider to onboarding, and otherwise lets the navigator render.
+ *
+ * `booting` is waited on so a rider with a saved session is not flashed the
+ * login screen while their profile loads.
  */
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, booting } = useApp();
@@ -32,12 +39,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [booting, user, pathname, router]);
 
-  // Hold the screen until the session question is answered, otherwise a
+  // Hold the splash until the session question is answered, otherwise a
   // protected screen would flash its contents for a frame first.
   if (booting) {
     return (
       <View
-        testID="auth-gate-loading"
+        testID="splash-screen"
         style={{
           flex: 1,
           alignItems: 'center',
@@ -45,7 +52,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           backgroundColor: colors.background,
         }}
       >
-        <ActivityIndicator color={colors.primary} />
+        <LinqLogo size={120} />
+        <Text style={styles.tag}>Find your Ride Twin.</Text>
+        <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
       </View>
     );
   }
@@ -63,4 +72,10 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export { sanitizeNext };
+const styles = {
+  tag: {
+    marginTop: spacing.xl,
+    color: colors.textSecondary,
+    fontSize: font.size.lg,
+  },
+};
