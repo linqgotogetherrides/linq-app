@@ -19,6 +19,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/src/lib/supabase';
 import { saveSession } from '@/src/services/session';
+import { destinationAfterAuth } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
@@ -44,7 +45,7 @@ const VERIFICATION_OPTIONS: {
 
 export default function AccountCreation() {
   const router = useRouter();
-  const { uid, phone } = useLocalSearchParams<{ uid: string; phone: string }>();
+  const { uid, phone, next } = useLocalSearchParams<{ uid: string; phone: string; next?: string }>();
   const { fetchUserProfile, setUser, showToast } = useApp();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -181,10 +182,10 @@ export default function AccountCreation() {
       // the session has to be recorded on this path too.
       await saveSession(targetUid);
       showToast('Profile created successfully!');
-      router.replace('/(tabs)');
+      router.replace(destinationAfterAuth(next));
     } catch (e: any) {
       showToast(e.message || 'Profile saved locally');
-      router.replace('/(tabs)');
+      router.replace(destinationAfterAuth(next));
     } finally {
       setLoading(false);
     }
@@ -234,7 +235,7 @@ export default function AccountCreation() {
             </View>
 
             <Pressable
-              onPress={() => router.replace('/(tabs)')}
+              onPress={() => router.replace(destinationAfterAuth(next))}
               hitSlop={12}
               testID="skip-account"
             >

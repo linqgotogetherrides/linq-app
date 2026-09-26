@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Dimensions, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { withNext } from '@/src/lib/authNavigation';
 import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import PrimaryButton from '@/src/components/PrimaryButton';
@@ -43,6 +44,8 @@ const slides: Slide[] = [
 
 export default function Onboarding() {
   const router = useRouter();
+  // The page the gate turned away from, if any.
+  const { next } = useLocalSearchParams<{ next?: string }>();
   const [step, setStep] = useState(0);
 
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function Onboarding() {
   }, []);
 
   const handleGetStarted = () => {
-    router.replace('/login');
+    router.replace(withNext('/login', next));
   };
 
   const slide = slides[step];

@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter, Link } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PENDING_REFERRAL_KEY } from '@/src/services/referralLink';
 import { saveSession } from '@/src/services/session';
+import { destinationAfterAuth, sanitizeNext } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import PrimaryButton from '@/src/components/PrimaryButton';
@@ -12,7 +13,7 @@ import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
 export default function Otp() {
   const router = useRouter();
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const { phone, next } = useLocalSearchParams<{ phone: string; next?: string }>();
   const { confirmResult, showToast, fetchUserProfile } = useApp();
   const [otp, setOtp] = useState('');
   const [remaining, setRemaining] = useState(60);
@@ -35,6 +36,7 @@ export default function Otp() {
     }
     try {
       setLoading(true);
+      const safeNext = sanitizeNext(next);
       const userCredential = await confirmResult.confirm(otp);
       const firebaseUser = userCredential.user;
 
@@ -60,7 +62,7 @@ export default function Otp() {
 
       if (existingProfile) {
         showToast('Welcome back!');
-        router.replace('/(tabs)');
+        router.replace(destinationAfterAuth(next));
       } else {
         showToast('Phone verified successfully!');
         router.replace({
@@ -68,6 +70,7 @@ export default function Otp() {
           params: {
             uid: firebaseUser.uid,
             phone: firebaseUser.phoneNumber || '',
+            ...(safeNext ? { next: safeNext } : {}),
             ...(refCode ? { ref: refCode } : {}),
           },
         });

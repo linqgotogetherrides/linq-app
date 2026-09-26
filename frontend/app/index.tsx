@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import LinqLogo from '@/src/components/LinqLogo';
 import { useApp } from '@/src/context/AppContext';
+import { destinationAfterAuth, withNext } from '@/src/lib/authNavigation';
 import { colors, font, spacing } from '@/src/theme/tokens';
 
 export default function Splash() {
   const router = useRouter();
   const { user, booting } = useApp();
+  const { next } = useLocalSearchParams<{ next?: string }>();
   // Hold the logo briefly so this does not flash, then route on what we know.
   const [minElapsed, setMinElapsed] = useState(false);
   const routed = useRef(false);
@@ -22,8 +24,9 @@ export default function Splash() {
     // through onboarding and asked to sign in again on every launch.
     if (!minElapsed || booting || routed.current) return;
     routed.current = true;
-    router.replace(user ? '/(tabs)' : '/onboarding');
-  }, [minElapsed, booting, user, router]);
+    // A returning rider deep-linking to a protected page still lands there.
+    router.replace(user ? destinationAfterAuth(next) : withNext('/onboarding', next));
+  }, [minElapsed, booting, user, next, router]);
 
   return (
     <View style={styles.container} testID="splash-screen">

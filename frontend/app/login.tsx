@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { sanitizeNext, withNext } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import { signInWithPhoneNumber } from '../src/lib/auth';
 import LinqLogo from '@/src/components/LinqLogo';
@@ -12,6 +13,9 @@ import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
 export default function Login() {
   const router = useRouter();
+  // The page the gate turned away from, carried through the whole flow.
+  const { next } = useLocalSearchParams<{ next?: string }>();
+  const safeNext = sanitizeNext(next);
   const { setConfirmResult, showToast } = useApp();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,7 +30,7 @@ export default function Login() {
       // Call the platform-agnostic auth function
       const confirmation = await signInWithPhoneNumber(fullPhone);
       setConfirmResult(confirmation);
-      router.push({ pathname: '/otp', params: { phone: fullPhone } });
+      router.push({ pathname: '/otp', params: { phone: fullPhone, ...(safeNext ? { next: safeNext } : {}) } });
     } catch (e: any) {
       showToast(e.message || 'Error sending OTP');
     } finally {
@@ -81,11 +85,11 @@ export default function Login() {
 
             <View style={{ height: spacing.lg }} />
 
-            <Pressable style={styles.socialBtn} testID="continue-google" onPress={() => router.push('/account-creation')}>
+            <Pressable style={styles.socialBtn} testID="continue-google" onPress={() => router.push(withNext('/account-creation', next))}>
               <Ionicons name="logo-google" size={18} color={colors.textPrimary} />
               <Text style={styles.socialText}>Continue with Google</Text>
             </Pressable>
-            <Pressable style={styles.socialBtn} testID="continue-apple" onPress={() => router.push('/account-creation')}>
+            <Pressable style={styles.socialBtn} testID="continue-apple" onPress={() => router.push(withNext('/account-creation', next))}>
               <Ionicons name="logo-apple" size={18} color={colors.textPrimary} />
               <Text style={styles.socialText}>Continue with Apple</Text>
             </Pressable>
