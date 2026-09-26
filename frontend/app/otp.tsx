@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter, Link } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PENDING_REFERRAL_KEY } from '@/src/services/referralLink';
 import { saveSession } from '@/src/services/session';
+import { userProfileExists } from '@/src/services/userProfile';
 import { destinationAfterAuth, sanitizeNext } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
@@ -55,17 +56,25 @@ export default function Otp() {
         refCode = new URLSearchParams(globalThis.location.search).get('ref');
       }
 
-      // Check if user exists in Supabase
-      // Remember the uid so the auth gate lets this rider back in on the next
-      // launch instead of bouncing them through signup every time.
-      await saveSession(firebaseUser.uid);
+      // Whether this rider already has a profile has to be asked *before* any
+      // self-healing fetch. fetchUserProfile() creates a missing row so the
+      // referral game and seat requests stop failing on a foreign key, which
+      // means its return value can no longer distinguish a new rider from a
+      // returning one. Relying on it sent every new rider straight into the app
+      // and account creation was never reached.
+      const isReturningRider = await userProfileExists(firebaseUser.uid);
 
-      const existingProfile = await fetchUserProfile(firebaseUser.uid);
-
-      if (existingProfile) {
+      if (isReturningRider) {
+        // Remember the uid so the gate lets this rider back in next launch
+        // instead of bouncing them through signup every time.
+        await saveSession(firebaseUser.uid);
+        await fetchUserProfile(firebaseUser.uid);
         showToast('Welcome back!');
         router.replace(destinationAfterAuth(next));
       } else {
+        // No session is saved yet. account-creation writes it once the profile
+        // exists, otherwise a cold start would self-heal an empty profile and
+        // let the rider in without ever completing signup.
         showToast('Phone verified successfully!');
         router.replace({
           pathname: '/account-creation',

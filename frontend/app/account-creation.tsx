@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -18,9 +18,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/src/lib/supabase';
-import { saveSession } from '@/src/services/session';
-import { signInWithPhoneNumber } from '@/src/lib/auth';
-import { destinationAfterAuth } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
@@ -46,25 +43,10 @@ const VERIFICATION_OPTIONS: {
 
 export default function AccountCreation() {
   const router = useRouter();
-  // `uid` is deliberately ignored: a URL param cannot prove a phone number.
-  const { phone, next } = useLocalSearchParams<{ phone?: string; next?: string }>();
-  const { confirmResult, fetchUserProfile, otpVerifiedUid, setConfirmResult, setOtpVerifiedUid, setUser, showToast } = useApp();
+  const { uid, phone } = useLocalSearchParams<{ uid: string; phone: string }>();
+  const { fetchUserProfile, setUser, showToast } = useApp();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-  /**
-   * Phone verification is a gate, not a form field. Reaching this screen from
-   * Google or Apple sign-in, or from a direct link, arrives with no verified
-   * credential, and the old code papered over that by minting an id from the
-   * clock (`user_${Date.now()}`). An account now cannot be created at all
-   * until a phone number has been confirmed.
-   */
-  const [verifiedUid, setVerifiedUid] = useState<string | null>(otpVerifiedUid);
-  const [verifyPhone, setVerifyPhone] = useState(phone ?? '');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(Boolean(phone));
-  const [otpError, setOtpError] = useState<string | null>(null);
-  const [verifying, setVerifying] = useState(false);
-  const pendingConfirmation = useRef<any>(confirmResult);
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [gender, setGender] = useState<'female' | 'male' | 'other' | ''>('female');
@@ -112,55 +94,6 @@ export default function AccountCreation() {
     showToast('Photo removed');
   };
 
-  const normalizedVerifyPhone = verifyPhone.replace(/\D/g, '');
-  const verifyPhoneValid = normalizedVerifyPhone.length >= 10;
-  const otpValid = otp.trim().length >= 4;
-
-  const sendVerificationCode = async () => {
-    if (!verifyPhoneValid) {
-      setOtpError('Enter a valid 10-digit phone number.');
-      return;
-    }
-    try {
-      setVerifying(true);
-      setOtpError(null);
-      const full = `+91${normalizedVerifyPhone}`;
-      const confirmation = await signInWithPhoneNumber(full);
-      pendingConfirmation.current = confirmation;
-      setConfirmResult(confirmation);
-      setVerifyPhone(full);
-      setOtpSent(true);
-      setOtp('');
-    } catch (e: any) {
-      setOtpError(e?.message ?? 'Could not send the code. Try again.');
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  /** Confirms the code and only then reveals the rest of the form. */
-  const confirmVerification = async () => {
-    if (!otpValid) {
-      setOtpError('Enter the code we sent you.');
-      return;
-    }
-    if (!pendingConfirmation.current) {
-      setOtpError('Send a code first.');
-      return;
-    }
-    try {
-      setVerifying(true);
-      setOtpError(null);
-      const credential = await pendingConfirmation.current.confirm(otp.trim());
-      setVerifiedUid(credential.user.uid);
-      setOtpVerifiedUid(credential.user.uid);
-    } catch (e: any) {
-      setOtpError(e?.message ?? 'That code was not correct.');
-    } finally {
-      setVerifying(false);
-    }
-  };
-
   const handleNextStep = () => {
     if (step === 1) {
       if (!isStep1Valid) {
@@ -192,13 +125,7 @@ export default function AccountCreation() {
   };
 
   const handleComplete = async () => {
-    // No fabricated id. Without a phone-confirmed credential there is no
-    // account to create, and the form is not even reachable in that state.
-    const targetUid = verifiedUid;
-    if (!targetUid) {
-      showToast('Verify your phone number to finish setting up your account.');
-      return;
-    }
+    const targetUid = uid || `user_${Date.now()}`;
 
     try {
       setLoading(true);
@@ -249,15 +176,11 @@ export default function AccountCreation() {
         showToast('Profile could not be verified. Please try again.');
         return;
       }
-      // Google and Apple sign-in arrive here without passing the OTP screen, so
-      // the session has to be recorded on this path too.
-      setOtpVerifiedUid(targetUid);
-      await saveSession(targetUid);
       showToast('Profile created successfully!');
-      router.replace(destinationAfterAuth(next));
+      router.replace('/(tabs)');
     } catch (e: any) {
       showToast(e.message || 'Profile saved locally');
-      router.replace(destinationAfterAuth(next));
+      router.replace('/(tabs)');
     } finally {
       setLoading(false);
     }
@@ -274,88 +197,7 @@ export default function AccountCreation() {
   };
   const bgImage = getBgImage(step);
 
-  // Gate the whole form behind phone verification.
-  const content = !verifiedUid ? (
-    <SafeAreaView style={styles.container} testID="account-verify-screen">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={styles.verifyTitle}>VERIFY YOUR PHONE</Text>
-          <Text style={styles.subtitle}>
-            We verify every rider&apos;s number so ride requests reach a real person.
-          </Text>
-
-          {!otpSent ? (
-            <>
-              <View style={styles.inputBox}>
-                <TextInput
-                  testID="verify-phone-input"
-                  value={verifyPhone}
-                  onChangeText={setVerifyPhone}
-                  placeholder="10-digit mobile number"
-                  placeholderTextColor={colors.textTertiary}
-                  keyboardType="phone-pad"
-                  maxLength={13}
-                  style={styles.inputField}
-                />
-              </View>
-              <PrimaryButton
-                testID="verify-send-code"
-                title={verifying ? 'Sending…' : 'Send code'}
-                icon="flash"
-                loading={verifying}
-                onPress={() => void sendVerificationCode()}
-              />
-            </>
-          ) : (
-            <>
-              <Text style={styles.inputLabel}>Code sent to {verifyPhone}</Text>
-              <View style={styles.inputBox}>
-                <TextInput
-                  testID="verify-otp-input"
-                  value={otp}
-                  onChangeText={setOtp}
-                  placeholder="Enter the 6-digit code"
-                  placeholderTextColor={colors.textTertiary}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  style={styles.inputField}
-                />
-              </View>
-              {otpError ? (
-                <Text style={styles.verifyError} testID="verify-error">
-                  {otpError}
-                </Text>
-              ) : null}
-              <PrimaryButton
-                testID="verify-confirm"
-                title={verifying ? 'Verifying…' : 'Verify and continue'}
-                icon="checkmark-circle"
-                loading={verifying}
-                onPress={() => void confirmVerification()}
-              />
-              <Pressable
-                testID="verify-change-number"
-                onPress={() => {
-                  setOtpSent(false);
-                  setOtp('');
-                  setOtpError(null);
-                }}
-                hitSlop={12}
-              >
-                <Text style={styles.subtitle}>Change number</Text>
-              </Pressable>
-            </>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  ) : (
+  const content = (
     <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} testID="account-creation-screen">
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -387,6 +229,13 @@ export default function AccountCreation() {
               ))}
             </View>
 
+            <Pressable
+              onPress={() => router.replace('/(tabs)')}
+              hitSlop={12}
+              testID="skip-account"
+            >
+              <Text style={styles.skip}>Skip</Text>
+            </Pressable>
           </View>
 
           {/* Category Chip */}
@@ -768,7 +617,7 @@ export default function AccountCreation() {
     </SafeAreaView>
   );
 
-  if (verifiedUid && bgImage) {
+  if (bgImage) {
     return (
       <ImageBackground
         key={step}
@@ -869,22 +718,6 @@ const styles = StyleSheet.create({
     fontWeight: font.weight.bold,
     lineHeight: 32,
     marginBottom: spacing.xs,
-  },
-  verifyTitle: {
-    fontSize: font.size.lg,
-    color: colors.textPrimary,
-    fontWeight: font.weight.medium,
-    marginBottom: spacing.xs,
-  },
-  inputField: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: font.size.base,
-  },
-  verifyError: {
-    fontSize: font.size.sm,
-    color: colors.error,
-    marginTop: spacing.xs,
   },
   subtitle: {
     fontSize: font.size.sm,
