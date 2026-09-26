@@ -37,6 +37,8 @@ ALTER TABLE public.notifications
     'system'
   ));
 
+-- Returns the number of owner notices raised by this run (not the number of
+-- rides closed), so a caller can tell whether the run did anything.
 CREATE OR REPLACE FUNCTION public.close_expired_rides()
 RETURNS integer
 LANGUAGE plpgsql
@@ -55,7 +57,8 @@ BEGIN
       AND travel_time IS NOT NULL
       AND (travel_date + travel_time) <= now()
     RETURNING id, user_id, pickup_address, dropoff_address
-  )
+  ),
+  notified AS (
   INSERT INTO public.notifications (
     recipient_id,
     actor_id,
@@ -81,9 +84,13 @@ BEGIN
     FROM public.notifications n
     WHERE n.ride_id = e.id
       AND n.type = 'ride_closed'
-  );
+  )
+  RETURNING ride_id
+  )
+  -- Data-modifying CTEs run exactly once even when unreferenced, so the close
+  -- and the notice both happen; this just counts what the notice produced.
+  SELECT count(*) INTO v_closed FROM notified;
 
-  GET DIAGNOSTICS v_closed = ROW_COUNT;
   RETURN v_closed;
 END;
 $$;
