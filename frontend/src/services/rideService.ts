@@ -439,7 +439,9 @@ export const rideService = {
         travel_date: toNullableDate(data.date),
         selected_days: dayLabelsToIndexes(data.days),
         available_seats: Math.max(0, data.seatsAvailable ?? 1),
-        occupied_seats: 1,
+        // A rider occupies their own seat; a seeker is the one being collected
+        // and occupies nothing. Hardcoding 1 made every solo seeker look full.
+        occupied_seats: data.vehicle?.kind ? 1 : 0,
         price_per_seat: data.pricePerSeat ?? 0,
         women_only: Boolean(data.womenOnly),
         vehicle_kind: data.vehicle?.kind ?? null,

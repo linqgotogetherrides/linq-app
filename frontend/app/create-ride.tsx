@@ -129,6 +129,9 @@ export default function CreateRide() {
   const priceFloor = 50;
   const priceCeiling = 300;
   const sliderPrice = Math.min(priceCeiling, Math.max(priceFloor, price || 0));
+  // A seeker posting their availability has no seat to sell, so no price is
+  // asked for or required. A rider offering seats must set one.
+  const priceRequired = hasVehicle;
   const priceIsSet = price >= priceFloor;
 
   // Editing an existing post: load it once and prefill the form.
@@ -283,8 +286,8 @@ export default function CreateRide() {
 
   const saveRide = async (status: 'active' | 'draft') => {
     // A price of 0 is "not set", not free. Refuse to publish rather than write a
-    // row that later renders as a bogus Rs 0 seat.
-    if (!priceIsSet) {
+    // row that later renders as a bogus Rs 0 seat. Only riders are asked for one.
+    if (priceRequired && !priceIsSet) {
       showToast('Set a price per seat before saving.');
       return;
     }
@@ -355,9 +358,29 @@ export default function CreateRide() {
         returnTime,
         date: travelDate,
         days: days.map((day) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day]),
-        pricePerSeat: price,
-        seatsTotal: Math.max(1, passengers.length),
-        seatsAvailable: Math.max(0, passengers.length - 1),
+        pricePerSeat: hasVehicle ? sliderPrice : 0,
+        // Only a rider has a vehicle. A seeker post carries none, and sending an
+        // empty object here would have written a vehicle row with no real data.
+        vehicle: hasVehicle
+          ? {
+              id: '',
+              kind: transport,
+              model: model.trim() || undefined,
+              numberPlate: plate.trim().toUpperCase() || undefined,
+              seats: Math.max(1, availableSeats + 1),
+            }
+          : undefined,
+        // A rider is selling seats in their own vehicle, so the count is the
+        // vehicle's free seats. A seeker is asking to be collected, so what is
+        // still needed is the number of people travelling with them. Using the
+        // passenger count for a solo seeker gave 0, and request_ride() refuses
+        // any ride with no free seat, which blocked the seeker flow entirely.
+        seatsTotal: hasVehicle
+          ? availableSeats + occPassengers.length
+          : Math.max(1, passengers.length),
+        seatsAvailable: hasVehicle
+          ? Math.max(0, availableSeats)
+          : Math.max(1, passengers.length),
         womenOnly,
         status,
       });
