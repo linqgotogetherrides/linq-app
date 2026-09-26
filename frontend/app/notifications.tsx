@@ -226,7 +226,7 @@ function RequestActionCard({
       <View style={styles.requestMeta}>
         <View style={styles.metaItem}>
           <Ionicons name="time-outline" size={15} color={colors.textSecondary} />
-          <Text style={styles.metaText}>{request.ride.time ?? 'Time flexible'}</Text>
+          <Text style={styles.metaText}>{request.ride.time ?? 'No time set'}</Text>
         </View>
         <View style={styles.metaItem}>
           <Ionicons name="car-outline" size={15} color={colors.textSecondary} />

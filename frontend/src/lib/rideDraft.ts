@@ -32,9 +32,14 @@ export function clearRideDraft(): void {
   draft = null;
 }
 
+/**
+ * Nothing is pre-filled. An empty time is stored as null, and the form renders
+ * that space as blank rather than filling it with a plausible-looking time the
+ * rider never chose.
+ */
 const DEFAULT_DRAFT: RideDraft = {
-  travelTime: '08:00 AM',
-  returnTime: '06:00 PM',
+  travelTime: '',
+  returnTime: '',
   travelDate: '',
   price: 0,
 };

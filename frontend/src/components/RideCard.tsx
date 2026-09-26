@@ -24,6 +24,14 @@ function TagPill({ label, variant = 'default' }: { label: string; variant?: 'def
   );
 }
 
+/** Human labels for each declared vehicle kind. */
+const VEHICLE_LABELS: Record<string, string> = {
+  car: 'CAR',
+  bike: 'BIKE',
+  auto: 'AUTO',
+  cab: 'CAB',
+};
+
 export default function RideCard({ ride, onRequest }: Props) {
   const router = useRouter();
   const { user } = useApp();
@@ -79,7 +87,28 @@ export default function RideCard({ ride, onRequest }: Props) {
         : matchScoreVal >= 40
           ? 'ROUTES PARTLY OVERLAP'
           : 'DIFFERENT ROUTE';
-  const secondaryTag = ride.vehicle?.kind === 'car' ? 'CAR' : ride.vehicle?.kind === 'bike' ? 'BIKE' : !ride.vehicle ? 'WALK / BUS' : 'AUTO';
+  // Transport is described, never guessed. A rider with no vehicle is labelled
+  // as such; the previous tag claimed they were walking or taking a bus, which
+  // was invented, and it also mapped a cab onto 'AUTO'.
+  const vehicleKind = ride.vehicle?.kind;
+  const secondaryTag = !vehicleKind
+    ? 'NO VEHICLE'
+    : VEHICLE_LABELS[vehicleKind] ?? vehicleKind.toUpperCase();
+
+  // Money is only meaningful when there is a vehicle to share and a price was
+  // actually set. Showing a number in either case would be fabricating one.
+  const showPrice = Boolean(vehicleKind) && ride.pricePerSeat > 0;
+
+  // Only facts we actually have. The previous line interpolated rating and trips
+  // unconditionally, so a missing value rendered as the text "undefined", and it
+  // collapsed every non-female gender to "Male" including 'other' and unset.
+  const creatorMeta = [
+    ride.creator.rating != null ? `${ride.creator.rating}` : null,
+    ride.creator.gender ? ride.creator.gender[0].toUpperCase() + ride.creator.gender.slice(1) : null,
+    ride.creator.trips != null ? `${ride.creator.trips} trips` : null,
+  ]
+    .filter(Boolean)
+    .join(' • ');
 
   return (
     <Pressable
@@ -99,15 +128,21 @@ export default function RideCard({ ride, onRequest }: Props) {
               <Text style={[styles.typeText, { color: ride.type === 'daily' ? colors.warning : colors.info }]}>{ride.type.toUpperCase()}</Text>
             </View>
           </View>
-          <View style={styles.metaRow}>
-            <Ionicons name="star" size={12} color={colors.yellow} />
-            <Text style={styles.meta}> {ride.creator.rating} • {ride.creator.gender === 'female' ? 'Female' : 'Male'} • {ride.creator.trips} trips</Text>
+          {creatorMeta.length > 0 ? (
+            <View style={styles.metaRow}>
+              {ride.creator.rating != null ? (
+                <Ionicons name="star" size={12} color={colors.yellow} />
+              ) : null}
+              <Text style={styles.meta}> {creatorMeta}</Text>
+            </View>
+          ) : null}
+        </View>
+        {showPrice ? (
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.price}>₹{ride.pricePerSeat.toFixed(0)}</Text>
+            <Text style={styles.priceLabel}>PER SEAT</Text>
           </View>
-        </View>
-        <View style={{ alignItems: 'flex-end' }}>
-          <Text style={styles.price}>₹{ride.pricePerSeat.toFixed(0)}</Text>
-          <Text style={styles.priceLabel}>PER SEAT</Text>
-        </View>
+        ) : null}
       </View>
 
       <View style={styles.routeRow}>

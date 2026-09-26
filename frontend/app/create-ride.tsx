@@ -111,11 +111,12 @@ export default function CreateRide() {
   const [published, setPublished] = useState(false);
   const [publishedStatus, setPublishedStatus] = useState<'active' | 'draft'>('active');
   const [publishing, setPublishing] = useState(false);
+  // No invented times: an unset time stays unset and renders blank.
   const [travelTime, setTravelTime] = useState<string>(
-    draft?.travelTime || params.travelTime || '08:00 AM',
+    draft?.travelTime || params.travelTime || '',
   );
   const [returnTime, setReturnTime] = useState<string>(
-    draft?.returnTime || params.returnTime || '06:00 PM',
+    draft?.returnTime || params.returnTime || '',
   );
   const [travelDate, setTravelDate] = useState<string>(draft?.travelDate ?? '');
   const [passengers, setPassengers] = useState<{ name: string; sub: string; self?: boolean; data?: PassengerData }[]>([
@@ -155,8 +156,8 @@ export default function CreateRide() {
           longitude: existing.destination.longitude,
         });
       }
-      setTravelTime(existing.time || '08:00 AM');
-      setReturnTime(existing.returnTime || '06:00 PM');
+      setTravelTime(existing.time ?? '');
+      setReturnTime(existing.returnTime ?? '');
       setTravelDate(existing.date || '');
       setPrice(existing.pricePerSeat || 0);
       setRideType(existing.type === 'planned' ? 'planned' : 'daily');
@@ -510,8 +511,8 @@ export default function CreateRide() {
                   ))}
                 </View>
                 <View style={styles.timeGrid}>
-                  <Pressable style={styles.timeBox} onPress={() => setTimePicker('travel')}><Text style={styles.smallLabel}>Travel Time</Text><View style={styles.timeSelect}><Text style={styles.timeSelectText}>{travelTime}</Text><Ionicons name="chevron-down" size={14} color={colors.textSecondary} /></View></Pressable>
-                  <Pressable style={styles.timeBox} onPress={() => setTimePicker('return')}><Text style={styles.smallLabel}>Return Time</Text><View style={styles.timeSelect}><Text style={styles.timeSelectText}>{returnTime}</Text><Ionicons name="chevron-down" size={14} color={colors.textSecondary} /></View></Pressable>
+                  <Pressable style={styles.timeBox} onPress={() => setTimePicker('travel')}><Text style={styles.smallLabel}>Travel Time</Text><View style={styles.timeSelect}><Text style={[styles.timeSelectText, !travelTime && styles.timeUnset]}>{travelTime || 'Not set'}</Text><Ionicons name="chevron-down" size={14} color={colors.textSecondary} /></View></Pressable>
+                  <Pressable style={styles.timeBox} onPress={() => setTimePicker('return')}><Text style={styles.smallLabel}>Return Time</Text><View style={styles.timeSelect}><Text style={[styles.timeSelectText, !returnTime && styles.timeUnset]}>{returnTime || 'Not set'}</Text><Ionicons name="chevron-down" size={14} color={colors.textSecondary} /></View></Pressable>
                 </View>
               </View>
             ) : (
@@ -780,6 +781,7 @@ const styles = StyleSheet.create({
   seatsGrid: { flexDirection: 'row', gap: spacing.lg, marginBottom: spacing.md },
   priceVal: { fontSize: font.size.lg, color: colors.primary, fontWeight: font.weight.medium },
   priceUnset: { color: colors.textTertiary },
+  timeUnset: { color: colors.textTertiary },
   sliderTrack: { height: 6, backgroundColor: colors.surfaceSecondary, borderRadius: 3, marginTop: spacing.md, marginBottom: spacing.sm, justifyContent: 'center' },
   sliderFill: { height: 6, backgroundColor: colors.primary, borderRadius: 3 },
   sliderThumb: { position: 'absolute', width: 22, height: 22, borderRadius: 11, backgroundColor: colors.primary, borderWidth: 3, borderColor: colors.surface, marginLeft: -11, ...shadow.sm },

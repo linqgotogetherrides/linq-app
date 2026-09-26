@@ -14,7 +14,7 @@ interface Props {
 const HOURS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
 const MINUTES = ['00','15','30','45'];
 
-export default function TimePickerModal({ visible, title = 'Select time', value = '08:00 AM', onClose, onSelect }: Props) {
+export default function TimePickerModal({ visible, title = 'Select time', value = '', onClose, onSelect }: Props) {
   const [selectedHour, setSelectedHour] = useState('08');
   const [selectedMinute, setSelectedMinute] = useState('00');
   const [selectedMeridiem, setSelectedMeridiem] = useState('AM');

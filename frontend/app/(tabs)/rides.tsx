@@ -338,7 +338,7 @@ function RideManagementCard({
         <View style={styles.routeDetails}>
           <View style={styles.routeRow}>
             <Text style={styles.routeText} numberOfLines={1}>{ride.pickup.label}</Text>
-            <Text style={styles.routeMeta}>{ride.time ?? 'Time flexible'}</Text>
+            <Text style={styles.routeMeta}>{ride.time ?? 'No time set'}</Text>
           </View>
           <View style={styles.routeRow}>
             <Text style={styles.routeText} numberOfLines={1}>{ride.destination.label}</Text>

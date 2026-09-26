@@ -61,8 +61,8 @@ export default function Home() {
   } | null>(null);
   const [selectedDays, setSelectedDays] = useState<number[]>([0, 1, 2, 3, 4, 5]);
   const [presetIdx, setPresetIdx] = useState(0);
-  const [travelTime, setTravelTime] = useState('08:00 AM');
-  const [returnTime, setReturnTime] = useState('06:00 PM');
+  const [travelTime, setTravelTime] = useState('');
+  const [returnTime, setReturnTime] = useState('');
   const [travelDate, setTravelDate] = useState('');
   const [nearbyRides, setNearbyRides] = useState<Ride[]>([]);
   const nearbyRequestIdRef = React.useRef(0);

@@ -42,17 +42,23 @@ export interface ScoreResult {
 
 /**
  * Converts a time string like "08:30 AM" or "17:45" to minutes from midnight.
+ *
+ * Returns undefined when no usable time was given. It used to substitute 8:00 AM,
+ * which quietly invented a departure time for anyone who had not set one and
+ * could make two riders with no times look like a perfect match.
  */
-export function parseTimeToMinutes(timeStr?: string): number {
-  if (!timeStr) return 480; // default 8:00 AM
+export function parseTimeToMinutes(timeStr?: string): number | undefined {
+  if (!timeStr) return undefined;
   const cleaned = timeStr.trim().toUpperCase();
   const isPM = cleaned.includes('PM');
   const isAM = cleaned.includes('AM');
   const numbers = cleaned.replace(/[^0-9:]/g, '').split(':');
-  if (numbers.length === 0) return 480;
+  if (numbers.length === 0 || !numbers[0]) return undefined;
 
-  let hours = parseInt(numbers[0], 10) || 8;
-  const minutes = parseInt(numbers[1], 10) || 0;
+  const parsedHours = parseInt(numbers[0], 10);
+  if (!Number.isFinite(parsedHours)) return undefined;
+  let hours = parsedHours;
+  const minutes = parseInt(numbers[1] ?? '0', 10) || 0;
 
   if (isPM && hours < 12) hours += 12;
   if (isAM && hours === 12) hours = 0;
@@ -83,22 +89,36 @@ export function scoreRideMatch(
     : Math.max(0, 100 - (corridorResult.directionDiffDegrees / 90) * 100);
 
   // 5. Time Compatibility (0..100)
-  let timeScore = 80;
-  if (input.userTimeMinutes !== undefined && input.candidateTimeMinutes !== undefined) {
-    const diffMin = Math.abs(input.userTimeMinutes - input.candidateTimeMinutes);
+  // Only computed when both sides actually stated a time. If either is unknown
+  // the term is dropped and the remaining weights are renormalised, so missing
+  // data neither rewards nor penalises a ride.
+  const bothTimesKnown =
+    input.userTimeMinutes !== undefined && input.candidateTimeMinutes !== undefined;
+  let timeScore: number | undefined;
+  if (bothTimesKnown) {
+    const diffMin = Math.abs(input.userTimeMinutes! - input.candidateTimeMinutes!);
     if (diffMin <= 15) timeScore = 100;
     else if (diffMin <= 30) timeScore = 80;
     else if (diffMin <= 60) timeScore = 50;
     else timeScore = 20;
   }
 
-  // Weighted score calculation
+  // Weighted score calculation, renormalised over the terms actually used.
+  const terms: { score: number; weight: number }[] = [
+    { score: overlapScore, weight: weights.routeOverlap },
+    { score: pickupScore, weight: weights.pickupProximity },
+    { score: dropScore, weight: weights.dropProximity },
+    { score: directionScore, weight: weights.direction },
+  ];
+  if (timeScore !== undefined) {
+    terms.push({ score: timeScore, weight: weights.timeCompatibility });
+  }
+
+  const totalWeight = terms.reduce((sum, term) => sum + term.weight, 0);
   const weightedScore =
-    overlapScore * weights.routeOverlap +
-    pickupScore * weights.pickupProximity +
-    dropScore * weights.dropProximity +
-    directionScore * weights.direction +
-    timeScore * weights.timeCompatibility;
+    totalWeight > 0
+      ? terms.reduce((sum, term) => sum + term.score * term.weight, 0) / totalWeight
+      : 0;
 
   const finalScore = Math.min(100, Math.max(0, Math.round(weightedScore)));
 
