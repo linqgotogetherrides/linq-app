@@ -175,7 +175,7 @@ export default function FillTheRide() {
         {phase === 'playing' || phase === 'won' || phase === 'lost' ? (
           <>
             <GameHUD
-              lives={game.profile?.total_lives ?? 0}
+              lives={game.lives ?? 0}
               timeRemainingMs={hud.time}
               seats={hud.seats}
               wins={game.wins}
@@ -263,7 +263,7 @@ function StartScreen({
   onStart,
   onRefer,
 }: {
-  lives: number;
+  lives: number | null;
   wins: number;
   balance: number;
   busy: boolean;
@@ -283,7 +283,12 @@ function StartScreen({
       </Text>
 
       <View style={styles.statRow}>
-        <StatBox label="Lives" value={`${lives}`} icon="heart" tint={colors.error} />
+        <StatBox
+          label="Lives"
+          value={lives == null ? '—' : `${lives}`}
+          icon="heart"
+          tint={colors.error}
+        />
         <StatBox label="Wins" value={`${wins}/${MILESTONE_WINS}`} icon="trophy" tint={colors.warning} />
         <StatBox label="Wallet" value={`₹${Math.round(balance)}`} icon="wallet" tint={colors.primary} />
       </View>
@@ -293,7 +298,7 @@ function StartScreen({
         icon="play"
         onPress={onStart}
         loading={busy}
-        disabled={busy || lives === 0}
+        disabled={busy || lives === 0 || lives == null}
         testID="game-start-button"
       />
 
@@ -303,13 +308,22 @@ function StartScreen({
       </View>
 
       {lives === 0 ? (
-        <PrimaryButton
-          title="REFER A FRIEND"
-          icon="gift"
-          variant="secondary"
-          onPress={onRefer}
-          testID="game-refer-button"
-        />
+        <>
+          <Text style={styles.earnText}>You have used all your lives this week.</Text>
+          <PrimaryButton
+            title="REFER A FRIEND"
+            icon="gift"
+            variant="secondary"
+            onPress={onRefer}
+            testID="game-refer-button"
+          />
+        </>
+      ) : null}
+
+      {lives == null ? (
+        <Text style={styles.earnText} testID="game-lives-unknown">
+          We could not load your lives. Check your connection and try again.
+        </Text>
       ) : null}
     </ScrollView>
   );

@@ -227,6 +227,10 @@ export default function RideDetails() {
     if (current) setCenterOnCurrentLocation(true);
   };
 
+  // Assembled only from fields the creator actually provided. Anything unset is
+  // omitted rather than filled with a plausible-looking stand-in.
+  const detailRows = buildDetailRows(ride);
+
   const sharedDistanceKm = ride.sharedDistanceKm;
   const matchExplanation = ride.matchExplanation || 'Route match is not available for this ride.';
 
@@ -344,12 +348,36 @@ export default function RideDetails() {
           </View>
         </View>
 
-        {/* Key Info Grid */}
+        {/* Key Info Grid: only the figures the creator actually supplied */}
         <View style={styles.infoGrid}>
-          <InfoBox icon="navigate" label="Distance" value={`${ride.distanceKm ?? 8.4} km`} />
-          <InfoBox icon="people" label="Seats" value={`${ride.seatsAvailable}/${ride.seatsTotal}`} />
-          <InfoBox icon="cash" label="Per seat" value={`₹${ride.pricePerSeat.toFixed(0)}`} color={colors.primary} />
+          {ride.distanceKm != null ? (
+            <InfoBox icon="navigate" label="Distance" value={`${ride.distanceKm.toFixed(1)} km`} />
+          ) : null}
+          {ride.seatsAvailable != null ? (
+            <InfoBox icon="people" label="Seats" value={`${ride.seatsAvailable} available`} />
+          ) : null}
+          {ride.vehicle && ride.pricePerSeat > 0 ? (
+            <InfoBox
+              icon="cash"
+              label="Per seat"
+              value={`₹${ride.pricePerSeat.toFixed(0)}`}
+              color={colors.primary}
+            />
+          ) : null}
         </View>
+
+        {/* Everything else the creator filled in, and nothing they did not. */}
+        {detailRows.length > 0 ? (
+          <View style={styles.card} testID="ride-provided-details">
+            <Text style={styles.detailsTitle}>Trip details</Text>
+            {detailRows.map((row) => (
+              <View key={row.label} style={styles.detailRow}>
+                <Text style={styles.detailLabel}>{row.label}</Text>
+                <Text style={styles.detailValue}>{row.value}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {ride.co2Saved && (
           <View style={styles.co2}>
@@ -452,6 +480,39 @@ export default function RideDetails() {
   );
 }
 
+const VEHICLE_LABELS: Record<string, string> = {
+  car: 'Car',
+  bike: 'Bike',
+  auto: 'Auto',
+  cab: 'Cab',
+};
+
+function buildDetailRows(ride: Ride): { label: string; value: string }[] {
+  const rows: { label: string; value: string }[] = [];
+  const add = (label: string, value: string | number | undefined | null) => {
+    const text = typeof value === 'number' ? String(value) : value?.trim();
+    if (text) rows.push({ label, value: text });
+  };
+
+  add('Travel time', ride.time);
+  add('Return time', ride.returnTime);
+  add('Date', ride.date);
+
+  if (ride.days?.length) add('Repeats', ride.days.join(', '));
+
+  if (ride.vehicle) {
+    add('Vehicle', VEHICLE_LABELS[ride.vehicle.kind] ?? ride.vehicle.kind);
+    add('Model', ride.vehicle.model);
+    add('Number plate', ride.vehicle.numberPlate);
+  } else {
+    rows.push({ label: 'Vehicle', value: 'No vehicle' });
+  }
+
+  if (ride.womenOnly) rows.push({ label: 'Ride type', value: 'Women only' });
+
+  return rows;
+}
+
 function InfoBox({ icon, label, value, color }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; color?: string }) {
   return (
     <View style={styles.infoBox}>
@@ -497,6 +558,29 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: font.size.xs,
     fontWeight: font.weight.medium,
+  },
+  detailsTitle: {
+    fontSize: font.size.sm,
+    fontWeight: font.weight.medium,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    gap: spacing.md,
+  },
+  detailLabel: { fontSize: font.size.sm, color: colors.textSecondary },
+  detailValue: {
+    fontSize: font.size.sm,
+    color: colors.textPrimary,
+    fontWeight: font.weight.medium,
+    flexShrink: 1,
+    textAlign: 'right',
   },
   ownerActions: { gap: spacing.sm },
   ownerActionsRow: { flexDirection: 'row', gap: spacing.sm },

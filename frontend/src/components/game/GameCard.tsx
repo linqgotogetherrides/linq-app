@@ -15,7 +15,7 @@ import { colors, font, radius, shadow, spacing } from '@/src/theme/tokens';
  */
 export default function GameCard() {
   const router = useRouter();
-  const { lives, wins, winsToMilestone, milestoneUnlocked, loading } = useGame();
+  const { lives, wins, winsToMilestone, milestoneUnlocked, loading, error } = useGame();
 
   const bars = Array.from({ length: 10 }, (_, i) => i < wins);
 
@@ -29,13 +29,21 @@ export default function GameCard() {
           </View>
           <View style={styles.livesPill} testID="game-card-lives">
             <Ionicons name="heart" size={14} color={colors.error} />
-            <Text style={styles.livesText}>{loading ? '—' : lives} Lives</Text>
+            <Text style={styles.livesText} testID="game-card-lives-count">
+              {loading || lives == null ? '—' : `${lives} Lives`}
+            </Text>
           </View>
         </View>
 
         <Text style={styles.heroSub}>
           Fill every seat before the clock runs out. Every win earns ₹5.
         </Text>
+
+        {error && !loading ? (
+          <Text style={styles.errorNote} testID="game-card-error">
+            {error}
+          </Text>
+        ) : null}
 
         <Pressable
           style={({ pressed }) => [styles.playBtn, pressed && styles.pressed]}
@@ -101,6 +109,11 @@ export default function GameCard() {
 }
 
 const styles = StyleSheet.create({
+  errorNote: {
+    color: colors.error,
+    fontSize: 11,
+    marginTop: 6,
+  },
   wrap: { gap: spacing.md },
   hero: { borderRadius: radius.lg, padding: spacing.lg, ...shadow.md },
   heroTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },

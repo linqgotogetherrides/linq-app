@@ -116,8 +116,9 @@ function indexesToDayLabels(value: unknown): string[] | undefined {
 
 export function mapRideRow(row: DbRow, creatorRow?: DbRow | null): Ride {
   const creator = mapUserRow(asObject(row.creator) ?? creatorRow ?? null);
-  const pickupAddress = asString(row.pickup_address, 'Pickup');
-  const destinationAddress = asString(row.dropoff_address, 'Destination');
+  // No invented place names: an absent address stays empty and the UI says so.
+  const pickupAddress = asString(row.pickup_address) || '';
+  const destinationAddress = asString(row.dropoff_address) || '';
   const pickupPoint = pointFromValue(row.pickup_location);
   const destinationPoint = pointFromValue(row.dropoff_location);
   const rideType = asString(row.ride_type, 'daily');
@@ -156,7 +157,7 @@ export function mapRideRow(row: DbRow, creatorRow?: DbRow | null): Ride {
       ? {
           id: asString(row.id),
           kind: vehicleKind,
-          model: asString(row.vehicle_model, 'Vehicle'),
+          model: asString(row.vehicle_model) || undefined,
           numberPlate: asString(row.vehicle_plate),
           seats: availableSeats + occupiedSeats,
         }

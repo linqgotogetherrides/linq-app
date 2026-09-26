@@ -23,8 +23,8 @@ export interface Location {
 export interface Vehicle {
   id: string;
   kind: VehicleKind;
-  model: string;
-  numberPlate: string;
+  model?: string;
+  numberPlate?: string;
   seats: number;
   ac?: boolean;
 }

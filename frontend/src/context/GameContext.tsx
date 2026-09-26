@@ -19,8 +19,13 @@ type GameContextValue = {
   profile: GameProfile | null;
   loading: boolean;
   error: string | null;
-  /** Lives available to spend right now. */
-  lives: number;
+  /**
+   * Lives available to spend right now, or null when we do not know yet.
+   * null is deliberately distinct from 0: telling a player they have no lives
+   * when the figure simply failed to load is a fabricated answer, and it also
+   * locked them out of the game with no way to tell what went wrong.
+   */
+  lives: number | null;
   wins: number;
   winsToMilestone: number;
   milestoneUnlocked: boolean;
@@ -137,7 +142,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       profile,
       loading,
       error,
-      lives: profile?.total_lives ?? 0,
+      lives: profile ? profile.total_lives : null,
       wins: profile?.total_wins ?? 0,
       winsToMilestone: Math.max(0, MILESTONE_WINS - (profile?.total_wins ?? 0)),
       milestoneUnlocked: (profile?.total_wins ?? 0) >= MILESTONE_WINS,
