@@ -54,6 +54,39 @@ export async function ensureUserProfile(params: {
   return { ok: true };
 }
 
+/**
+ * Creates or updates a rider's profile.
+ *
+ * Deliberately not `upsert()`. PostgREST turns an upsert into
+ * `INSERT ... ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id, ...`, and `id`
+ * is not in the column-level UPDATE grant that 20260925150000 applied, so the
+ * whole statement is rejected with a table-level "permission denied" the moment
+ * the row already exists. Verified against the live database: upserting a fresh
+ * id returned 201 and upserting the same id again returned 401, while a PATCH of
+ * a granted column returned 200. Insert-when-absent and update-when-present only
+ * ever touches granted columns.
+ */
+export async function saveProfile(params: {
+  userId: string;
+  fields: Record<string, unknown>;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const exists = await userProfileExists(params.userId);
+
+  if (!exists) {
+    const { error } = await supabase
+      .from('user_profiles')
+      .insert({ id: params.userId, ...params.fields });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }
+
+  // `id` is the conflict key and is never in the SET list here.
+  const { error } = await supabase
+    .from('user_profiles')
+    .update(params.fields)
+    .eq('id', params.userId);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
 /** True when a row already exists for this rider. */
 export async function userProfileExists(userId: string): Promise<boolean> {
   const { data, error } = await supabase
