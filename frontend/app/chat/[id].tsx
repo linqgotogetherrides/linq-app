@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,24 +6,77 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useApp } from '@/src/context/AppContext';
-import { mockConversations, mockMessages, currentUser } from '@/src/mock/data';
+import { chatService, type ChatMessage, type ChatThread } from '@/src/services/chatService';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
 export default function Chat() {
   const router = useRouter();
-  const { id, locked } = useLocalSearchParams<{ id: string; locked: string }>();
-  const { showToast } = useApp();
-  const convo = mockConversations.find((c) => c.id === id) ?? mockConversations[0];
-  const isLocked = locked === '1';
-  const [messages, setMessages] = useState(mockMessages);
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { user, showToast } = useApp();
+  const [thread, setThread] = useState<ChatThread | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const sheetRef = useRef<BottomSheet>(null);
+  const scrollToEnd = useRef<ScrollView>(null);
+  const conversationId = typeof id === 'string' ? id : '';
 
-  const send = () => {
-    if (!text.trim()) return;
-    setMessages((m) => [...m, { id: `m${Date.now()}`, senderId: currentUser.id, text: text.trim(), time: '14:36' }]);
-    setText('');
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // list_threads gives the other rider and the route; list_messages marks
+        // the thread read as a side effect.
+        const [allThreads, loaded] = await Promise.all([
+          chatService.listThreads(user.id),
+          chatService.listMessages(conversationId, user.id),
+        ]);
+        if (cancelled) return;
+        setThread(allThreads.find((t) => t.id === conversationId) ?? null);
+        setMessages(loaded);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Could not open this conversation.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, conversationId]);
+
+  // Live messages, deduplicated against what is already on screen.
+  useEffect(() => {
+    if (!conversationId) return;
+    return chatService.subscribeToMessages(conversationId, (incoming) => {
+      setMessages((current) =>
+        current.some((m) => m.id === incoming.id) ? current : [...current, incoming],
+      );
+    });
+  }, [conversationId]);
+
+  const send = async () => {
+    const body = text.trim();
+    if (!body || !user?.id || !conversationId || sending) return;
+    setSending(true);
+    try {
+      const sent = await chatService.sendMessage(conversationId, user.id, body);
+      setMessages((current) =>
+        current.some((m) => m.id === sent.id) ? current : [...current, sent],
+      );
+      setText('');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'The message could not be sent.');
+    } finally {
+      setSending(false);
+    }
   };
 
   const renderBackdrop = useCallback((props: any) => (
@@ -40,79 +93,112 @@ export default function Chat() {
     <SafeAreaView style={styles.container} edges={['top']} testID="chat-screen">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}><Ionicons name="chevron-back" size={24} color={colors.textPrimary} /></Pressable>
-        <Image source={{ uri: convo.user.avatarUrl }} style={styles.avatar} contentFit="cover" />
+        <Image source={{ uri: thread?.otherAvatar }} style={styles.avatar} contentFit="cover" />
         <View style={{ flex: 1, marginLeft: spacing.sm }}>
-          <Text style={styles.name}>{convo.user.name}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ionicons name="star" size={11} color={colors.yellow} />
-            <Text style={styles.status}>{convo.user.rating} • DAILY</Text>
-          </View>
+          <Text style={styles.name}>{thread?.otherName ?? 'Rider'}</Text>
+          <Text style={styles.status} numberOfLines={1}>
+            {thread?.route ?? 'Matched on your route'}
+          </Text>
         </View>
-        <Pressable style={styles.headerIcon} testID="call-button" onPress={() => showToast(confirmed ? `Calling ${convo.user.name}…` : 'Confirm ride to enable calling')}><Ionicons name="call" size={18} color={colors.primary} /></Pressable>
+        <Pressable
+          style={styles.headerIcon}
+          testID="call-button"
+          onPress={() =>
+            showToast(
+              thread?.otherName
+                ? `Calling is not available yet.`
+                : 'This conversation is unavailable.',
+            )
+          }
+        >
+          <Ionicons name="call" size={18} color={colors.primary} />
+        </Pressable>
         <Pressable style={styles.headerIcon} testID="chat-info" onPress={() => sheetRef.current?.expand()}><Ionicons name="information-circle-outline" size={20} color={colors.primary} /></Pressable>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }} keyboardVerticalOffset={0}>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
-          <View style={styles.activeRide}>
-            <View style={styles.rideBadge}><Text style={styles.rideBadgeText}>ACTIVE RIDE</Text><Text style={styles.rideTime}>Today, 14:30</Text></View>
-            <View style={styles.rideRow}><View style={[styles.rdot, { backgroundColor: colors.primary }]} /><Text style={styles.rideLoc}>Central Station</Text></View>
-            <View style={styles.rideRow}><View style={[styles.rdot, { backgroundColor: colors.error }]} /><Text style={styles.rideLoc}>Tech Park Campus</Text></View>
-          </View>
-
-          <Text style={styles.dayDivider}>Today</Text>
-
-          {messages.map((m) => {
-            if (m.system) {
-              return <View key={m.id} style={styles.systemMsg}><Ionicons name="location" size={12} color={colors.textSecondary} /><Text style={styles.systemText}>{m.text}</Text></View>;
-            }
-            const mine = m.senderId === currentUser.id;
-            const blurred = isLocked && !mine;
-            return (
-              <View key={m.id} style={[styles.bubbleWrap, mine ? styles.bubbleRight : styles.bubbleLeft]}>
-                <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther, blurred && styles.bubbleBlurred]}>
-                  <Text style={[styles.bubbleText, mine && { color: colors.textInverse }, blurred && { color: 'transparent' }]}>{m.text}</Text>
-                  {!blurred && <Text style={[styles.bubbleTime, mine && { color: colors.primaryLight }]}>{m.time}</Text>}
-                </View>
+        <ScrollView
+          contentContainerStyle={{ padding: spacing.lg }}
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() => scrollToEnd.current?.scrollToEnd({ animated: true })}
+        >
+          {thread?.route ? (
+            <View style={styles.activeRide}>
+              <View style={styles.rideBadge}>
+                <Text style={styles.rideBadgeText}>MATCHED RIDE</Text>
               </View>
-            );
-          })}
+              <View style={styles.rideRow}>
+                <View style={[styles.rdot, { backgroundColor: colors.primary }]} />
+                <Text style={styles.rideLoc} numberOfLines={1}>{thread.route}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {loading ? (
+            <Text style={styles.systemText}>Loading conversation…</Text>
+          ) : error ? (
+            <Text style={styles.systemText}>{error}</Text>
+          ) : messages.length === 0 ? (
+            <Text style={styles.systemText}>
+              No messages yet. Say hello and agree where to meet.
+            </Text>
+          ) : (
+            messages.map((m) => {
+              const mine = m.senderId === user?.id;
+              return (
+                <View
+                  key={m.id}
+                  style={[styles.bubbleWrap, mine ? styles.bubbleRight : styles.bubbleLeft]}
+                >
+                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
+                    <Text style={[styles.bubbleText, mine && { color: colors.textInverse }]}>
+                      {m.body}
+                    </Text>
+                    <Text
+                      style={[styles.bubbleTime, mine && { color: colors.primaryLight }]}
+                    >
+                      {formatMessageTime(m.createdAt)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })
+          )}
         </ScrollView>
 
-        {isLocked ? (
-          <View style={styles.lockedBar}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.lockedTitle}>You exceeded the limit for today.</Text>
-              <Text style={styles.lockedSub}>Come again tomorrow or upgrade now.</Text>
-            </View>
-            <Pressable style={styles.upgradePill} testID="chat-upgrade" onPress={() => router.push('/pricing')}><Text style={styles.upgradePillText}>Upgrade</Text></Pressable>
-          </View>
-        ) : (
-          <>
-            {!confirmed && (
-              <View style={styles.confirmBar}>
-                <Text style={styles.confirmText}>Confirm ride so that call and location will be enabled.</Text>
-                <Pressable style={styles.confirmPill} testID="confirm-ride" onPress={() => { setConfirmed(true); showToast('Ride confirmed! You earned ₹7'); }}><Text style={styles.confirmPillText}>Confirm Ride</Text></Pressable>
-              </View>
-            )}
-            <View style={styles.inputBar}>
-              <Pressable style={styles.plusBtn} testID="attach-button" onPress={() => showToast('Attachment coming soon')}><Ionicons name="add" size={22} color={colors.textSecondary} /></Pressable>
-              <TextInput testID="message-input" value={text} onChangeText={setText} placeholder={`Message ${convo.user.name}...`} placeholderTextColor={colors.textTertiary} style={styles.input} />
-              <Pressable style={styles.micBtn} testID="mic-button" onPress={() => showToast('Voice message coming soon')}><Ionicons name="mic-outline" size={20} color={colors.textSecondary} /></Pressable>
-              <Pressable style={styles.sendBtn} testID="send-button" onPress={send}><Ionicons name="send" size={18} color={colors.textInverse} /></Pressable>
-            </View>
-          </>
-        )}
+        <View style={styles.inputBar}>
+          <TextInput
+            testID="message-input"
+            value={text}
+            onChangeText={setText}
+            placeholder={thread?.otherName ? `Message ${thread.otherName}…` : 'Message…'}
+            placeholderTextColor={colors.textTertiary}
+            style={styles.input}
+            multiline
+            onSubmitEditing={() => void send()}
+          />
+          <Pressable
+            style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
+            testID="send-button"
+            onPress={() => void send()}
+            disabled={!text.trim() || sending}
+          >
+            <Ionicons name="send" size={18} color={colors.textInverse} />
+          </Pressable>
+        </View>
       </KeyboardAvoidingView>
 
       <BottomSheet ref={sheetRef} index={-1} snapPoints={['52%']} enablePanDownToClose backdropComponent={renderBackdrop} handleIndicatorStyle={{ backgroundColor: colors.border }}>
         <BottomSheetView style={styles.sheet}>
           <View style={styles.sheetProfile}>
-            <Image source={{ uri: convo.user.avatarUrl }} style={styles.sheetAvatar} contentFit="cover" />
-            <Text style={styles.sheetName}>{convo.user.name}</Text>
+            <Image source={{ uri: thread?.otherAvatar }} style={styles.sheetAvatar} contentFit="cover" />
+            <Text style={styles.sheetName}>{thread?.otherName ?? 'Rider'}</Text>
             <Text style={styles.sheetSub}>CHAT SETTINGS</Text>
           </View>
-          <Pressable style={styles.settingRow} testID="setting-view-ride" onPress={() => { sheetRef.current?.close(); router.push('/ride/r_1'); }}>
+          <Pressable style={styles.settingRow} testID="setting-view-ride" onPress={() => {
+              sheetRef.current?.close();
+              if (thread?.rideId) router.push({ pathname: '/ride/[id]', params: { id: thread.rideId } });
+            }}>
             <Ionicons name="car-outline" size={20} color={colors.textPrimary} /><Text style={styles.settingText}>View Ride</Text><Ionicons name="chevron-forward" size={16} color={colors.textTertiary} style={{ marginLeft: 'auto' }} />
           </Pressable>
           <Pressable style={styles.settingRow} testID="setting-view-profile" onPress={() => settingsAction('Opening profile…')}>
@@ -132,6 +218,21 @@ export default function Chat() {
       </BottomSheet>
     </SafeAreaView>
   );
+}
+
+/** Clock time for today, otherwise a short date. */
+function formatMessageTime(value?: string): string {
+  if (!value) return '';
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) return '';
+  const today = new Date();
+  const sameDay =
+    when.getFullYear() === today.getFullYear() &&
+    when.getMonth() === today.getMonth() &&
+    when.getDate() === today.getDate();
+  return sameDay
+    ? when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : when.toLocaleDateString();
 }
 
 const styles = StyleSheet.create({
@@ -176,7 +277,8 @@ const styles = StyleSheet.create({
 
   inputBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider },
   plusBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
-  input: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.pill, paddingHorizontal: spacing.md, height: 44, color: colors.textPrimary, fontSize: font.size.base },
+  input: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.sm, minHeight: 44, maxHeight: 110, color: colors.textPrimary, fontSize: font.size.base },
+  sendBtnDisabled: { opacity: 0.5 },
   micBtn: { padding: 4 },
   sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
 

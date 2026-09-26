@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,7 +8,7 @@ import { useApp } from '@/src/context/AppContext';
 import EmptyState from '@/src/components/EmptyState';
 import GuestPrompt from '@/src/components/GuestPrompt';
 import NotificationButton from '@/src/components/NotificationButton';
-import { mockConversations } from '@/src/mock/data';
+import { chatService, type ChatThread } from '@/src/services/chatService';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
 export default function Messages() {
@@ -16,6 +16,28 @@ export default function Messages() {
   const { user, access } = useApp();
   const [tab, setTab] = useState<'all' | 'unread'>('all');
   const [query, setQuery] = useState('');
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      setThreads(await chatService.listThreads(user.id));
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : 'Could not load your conversations.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   if (!user) {
     return (
@@ -33,9 +55,11 @@ export default function Messages() {
     );
   }
 
-  const convos = mockConversations.filter((c) => {
+  const convos = threads.filter((c) => {
     if (tab === 'unread' && c.unreadCount === 0) return false;
-    if (query && !c.user.name.toLowerCase().includes(query.toLowerCase())) return false;
+    // Search what we actually know. A thread with no name yet is still listed.
+    const name = c.otherName ?? '';
+    if (query && !name.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   });
 
@@ -71,8 +95,24 @@ export default function Messages() {
         </Pressable>
       </View>
 
-      {convos.length === 0 ? (
-        <EmptyState icon="chatbubbles-outline" title="No conversations yet" subtitle="Unlock a ride to start chatting with your ride twin." />
+      {loadError ? (
+        <EmptyState
+          icon="cloud-offline-outline"
+          title="Could not load conversations"
+          subtitle={loadError}
+        />
+      ) : convos.length === 0 ? (
+        <EmptyState
+          icon="chatbubbles-outline"
+          title={loading ? 'Loading conversations…' : 'No conversations yet'}
+          subtitle={
+            loading
+              ? 'One moment.'
+              : tab === 'unread'
+                ? 'Nothing unread. Accepted ride requests start a chat here.'
+                : 'When someone accepts your ride request, your chat opens here.'
+          }
+        />
       ) : (
         <FlatList
           data={convos}
@@ -82,19 +122,21 @@ export default function Messages() {
             <Pressable
               testID={`conversation-${item.id}`}
               style={styles.row}
-              onPress={() => router.push({ pathname: '/chat/[id]', params: { id: item.id, locked: item.locked ? '1' : '0' } })}
+              onPress={() => router.push({ pathname: '/chat/[id]', params: { id: item.id } })}
             >
               <View>
-                <Image source={{ uri: item.user.avatarUrl }} style={styles.avatar} contentFit="cover" />
+                <Image source={{ uri: item.otherAvatar }} style={styles.avatar} contentFit="cover" />
                 {item.unreadCount > 0 && <View style={styles.unreadBadge} />}
               </View>
               <View style={{ flex: 1, marginLeft: spacing.md }}>
                 <View style={styles.rowTop}>
-                  <Text style={styles.name}>{item.user.name}</Text>
-                  <Text style={styles.time}>{item.lastMessageTime}</Text>
+                  <Text style={styles.name}>{item.otherName ?? 'Rider'}</Text>
+                  <Text style={styles.time}>{formatThreadTime(item.lastMessageAt)}</Text>
                 </View>
-                <Text style={styles.lastMsg} numberOfLines={1}>{item.locked ? '🔒 Chat locked — upgrade to reply' : item.lastMessage}</Text>
-                {item.rideRoute && <Text style={styles.route} numberOfLines={1}>{item.rideRoute}</Text>}
+                <Text style={styles.lastMsg} numberOfLines={1}>
+                  {item.lastMessage ?? 'No messages yet'}
+                </Text>
+                {item.route && <Text style={styles.route} numberOfLines={1}>{item.route}</Text>}
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </Pressable>
@@ -103,6 +145,21 @@ export default function Messages() {
       )}
     </SafeAreaView>
   );
+}
+
+/** Relative for today, otherwise a short date. Never invents a timestamp. */
+function formatThreadTime(value?: string): string {
+  if (!value) return '';
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) return '';
+  const minutes = Math.floor((Date.now() - when.getTime()) / 60000);
+  if (minutes < 1) return 'Now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return when.toLocaleDateString();
 }
 
 const styles = StyleSheet.create({
