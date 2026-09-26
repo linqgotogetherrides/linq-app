@@ -14,6 +14,7 @@ import { SosProvider } from '@/src/context/SosContext';
 import { SosAdminProvider } from '@/src/context/SosAdminContext';
 import { GameProvider } from '@/src/context/GameContext';
 import Toast from '@/src/components/Toast';
+import AuthGate from '@/src/components/AuthGate';
 
 LogBox.ignoreAllLogs(true);
 
@@ -42,6 +43,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AppProvider>
+          <AuthGate>
           <WalletProvider>
             <GameProvider>
               <SosProvider>
@@ -53,6 +55,7 @@ export default function RootLayout() {
               </SosProvider>
             </GameProvider>
           </WalletProvider>
+          </AuthGate>
         </AppProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

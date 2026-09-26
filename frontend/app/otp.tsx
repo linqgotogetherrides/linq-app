@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Link } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PENDING_REFERRAL_KEY } from '@/src/services/referralLink';
+import { saveSession } from '@/src/services/session';
 import { useApp } from '@/src/context/AppContext';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import PrimaryButton from '@/src/components/PrimaryButton';
@@ -51,6 +52,10 @@ export default function Otp() {
       }
 
       // Check if user exists in Supabase
+      // Remember the uid so the auth gate lets this rider back in on the next
+      // launch instead of bouncing them through signup every time.
+      await saveSession(firebaseUser.uid);
+
       const existingProfile = await fetchUserProfile(firebaseUser.uid);
 
       if (existingProfile) {

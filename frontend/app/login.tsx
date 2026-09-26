@@ -40,9 +40,9 @@ export default function Login() {
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: spacing.xl }} keyboardShouldPersistTaps="handled">
           <View style={styles.top}>
             <LinqLogo size={44} showText={false} />
-            <Pressable testID="skip-login-button" onPress={() => router.replace('/(tabs)')} hitSlop={12}>
-              <Text style={styles.skip}>Skip</Text>
-            </Pressable>
+            <Text style={styles.skip} accessibilityRole="header">
+              Step 1 of 2
+            </Text>
           </View>
 
           <View style={{ flex: 1, justifyContent: 'center', paddingVertical: spacing['2xl'] }}>
@@ -90,9 +90,9 @@ export default function Login() {
               <Text style={styles.socialText}>Continue with Apple</Text>
             </Pressable>
 
-            <Pressable onPress={() => router.replace('/(tabs)')} testID="signin-later">
-              <Text style={styles.link}>Skip • Sign in later</Text>
-            </Pressable>
+            <Text style={styles.link} testID="signin-required-note">
+              An account is required to post a ride, request a seat or chat.
+            </Text>
           </View>
 
           <Mission1000Banner />

@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/src/lib/supabase';
+import { saveSession } from '@/src/services/session';
 import { useApp } from '@/src/context/AppContext';
 import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
@@ -176,6 +177,9 @@ export default function AccountCreation() {
         showToast('Profile could not be verified. Please try again.');
         return;
       }
+      // Google and Apple sign-in arrive here without passing the OTP screen, so
+      // the session has to be recorded on this path too.
+      await saveSession(targetUid);
       showToast('Profile created successfully!');
       router.replace('/(tabs)');
     } catch (e: any) {

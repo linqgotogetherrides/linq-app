@@ -7,6 +7,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useWallet } from '@/src/context/WalletContext';
 import { signOut } from '@/src/lib/auth';
+import { clearSession } from '@/src/services/session';
 import GuestPrompt from '@/src/components/GuestPrompt';
 import NotificationButton from '@/src/components/NotificationButton';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
@@ -80,6 +81,9 @@ export default function Profile() {
     } catch (e) {
       console.log('Firebase signout error:', e);
     }
+    // Without this the stored uid survives and the auth gate would let the
+    // next launch straight back in as a signed-out rider.
+    await clearSession();
     setUser(null);
     setIsAuthed(false);
     router.replace('/onboarding');

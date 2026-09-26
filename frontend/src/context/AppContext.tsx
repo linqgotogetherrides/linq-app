@@ -13,6 +13,7 @@ import type {
 } from '@/src/types';
 import { supabase } from '@/src/lib/supabase';
 import { ensureUserProfile } from '@/src/services/userProfile';
+import { clearSession, readSession } from '@/src/services/session';
 import { rideRequestService } from '@/src/services/rideRequestService';
 
 interface AppContextValue {
@@ -20,6 +21,11 @@ interface AppContextValue {
   setUser: (u: User | null) => void;
   isAuthed: boolean;
   setIsAuthed: (v: boolean) => void;
+  /**
+   * True until we have decided whether a session exists. The auth gate waits for
+   * this so a returning rider is not flashed the login screen on every launch.
+   */
+  booting: boolean;
   confirmResult: any;
   setConfirmResult: (res: any) => void;
   access: AccessState;
@@ -124,6 +130,10 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [booting, setBooting] = useState(true);
+  // Mirrors `user` so the restore effect can read it without re-running.
+  const userRef = React.useRef<User | null>(null);
+  userRef.current = user;
   const [confirmResult, setConfirmResult] = useState<any>(null);
   const [access, setAccess] = useState<AccessState>(defaultAccess);
   const [rewardBalance, setRewardBalance] = useState(0);
@@ -274,7 +284,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [showToast, user]);
 
   /** Maps a user_profiles row onto the app's User shape and publishes it. */
-  const mapAndSet = (data: Record<string, any>): User => {
+  const mapAndSet = useCallback((data: Record<string, any>): User => {
     const mappedUser: User = {
       id: data.id,
       name: data.name || '',
@@ -301,9 +311,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUser(mappedUser);
     setIsAuthed(true);
     return mappedUser;
-  };
+  }, []);
 
-  const fetchUserProfile = async (uid: string): Promise<User | null> => {
+  const fetchUserProfile = useCallback(async (uid: string): Promise<User | null> => {
     try {
       const { data, error } = await supabase
         .from('user_profiles')
@@ -337,7 +347,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.log('Error fetching user:', e);
       return null;
     }
-  };
+  }, [mapAndSet]);
+
+  /**
+   * Restore the signed-in rider on cold start. A stale id simply fails to load a
+   * profile and is treated as signed out, so a deleted or half-created account
+   * cannot lock anyone in.
+   */
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const storedUid = await readSession();
+      if (!storedUid) {
+        if (!cancelled) setBooting(false);
+        return;
+      }
+      await fetchUserProfile(storedUid);
+      if (cancelled) return;
+      if (!userRef.current) {
+        // The row is gone or unreadable. Do not leave a dead id behind.
+        await clearSession();
+      }
+      setBooting(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchUserProfile]);
 
   const refreshUser = async () => {
     if (user?.id) {
@@ -410,7 +446,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider
       value={{
-        user, setUser, isAuthed, setIsAuthed, confirmResult, setConfirmResult,
+        user, setUser, isAuthed, setIsAuthed, booting, confirmResult, setConfirmResult,
         access, useRequest, useChat, upgradePlan, singleUnlock,
         walletBalance: 0, rewardBalance, addToWallet, spendReward,
         toast, showToast, fetchUserProfile, refreshUser,
