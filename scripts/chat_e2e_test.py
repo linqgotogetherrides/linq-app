@@ -206,7 +206,6 @@ try:
     check("flow 1 seats were counted from the group", sql_value(
         f"select status || '|' || available_seats::text as s from public.rides where id='{ride2}';")
         == "active|0", sql_value(f"select status from public.rides where id='{ride2}';"))
-    globals()["ride2"] = ride2
 
     print("\n=== 13. a rejected request opens nothing ===")
     r = rest("POST", "rides", json={
@@ -225,7 +224,6 @@ try:
     rpc("respond_to_ride_request", {"p_request_id": req3, "p_owner_id": OWNER, "p_decision": "declined"})
     check("declined request opens no thread", sql_value(
         f"select count(*)::int as c from public.conversations where ride_id='{ride3}';") == "0")
-    globals()["ride3"] = ride3
 
 except Exception as exc:  # noqa: BLE001
     print(f"\nERROR: {exc}")
@@ -233,17 +231,15 @@ except Exception as exc:  # noqa: BLE001
 
 finally:
     print("\n=== cleanup ===")
-    for key in ("ride_id", "ride2", "ride3"):
-        rid = globals().get(key)
-        if rid:
-            try:
-                sql(f"delete from public.rides where id='{rid}';")
-            except Exception:
-                pass
-    try:
-        sql(f"delete from public.user_profiles where id in ('{OWNER}','{SEEKER}','{OUTSIDER}');")
-    except Exception as exc:  # noqa: BLE001
-        print(f"cleanup warning: {str(exc)[:160]}")
+    # Prefix-based, so a test that raised before assigning every id still cleans.
+    for stmt in (
+        f"delete from public.rides where user_id like 'test-chat-%-{TAG}';",
+        f"delete from public.user_profiles where id like 'test-chat-%-{TAG}';",
+    ):
+        try:
+            sql(stmt)
+        except Exception as exc:  # noqa: BLE001
+            print(f"cleanup warning: {str(exc)[:140]}")
     print("test rides, threads and users removed")
 
 print("\n" + "=" * 54)

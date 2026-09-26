@@ -226,16 +226,16 @@ except Exception as exc:  # noqa: BLE001
 
 finally:
     print("\n=== cleanup ===")
-    for rid in ("ride_id", "ride_id2", "ride_id3", "ride_id4", "ride_id5"):
+    # Delete by prefix, not by tracked ids. A test that raised part way through
+    # never assigned every id, which is exactly how rows leaked before.
+    for stmt in (
+        f"delete from public.rides where user_id like 'test-seats-%-{TAG}';",
+        f"delete from public.user_profiles where id like 'test-seats-%-{TAG}';",
+    ):
         try:
-            sql(f"delete from public.rides where id='{globals().get(rid, '')}';")
-        except Exception:
-            pass
-    try:
-        sql(f"delete from public.user_profiles where id in "
-            f"('{OWNER}','{RIDER_A}','{RIDER_B}','{RIDER_C}');")
-    except Exception as exc:  # noqa: BLE001
-        print(f"cleanup warning: {str(exc)[:160]}")
+            sql(stmt)
+        except Exception as exc:  # noqa: BLE001
+            print(f"cleanup warning: {str(exc)[:140]}")
     print("test rides and users removed")
 
 print("\n" + "=" * 54)

@@ -145,7 +145,6 @@ try:
         "status": "active", "co2_saved_kg": None,
     })
     ride2 = r.json()[0]["id"]
-    globals()["ride2"] = ride2
     rpc("request_ride", {"p_ride_id": ride2, "p_requester_id": ATTACKER})
     req = sql_value(f"select id from public.ride_requests where ride_id='{ride2}' and requester_id='{ATTACKER}';")
     rpc("respond_to_ride_request", {"p_request_id": req, "p_owner_id": VICTIM, "p_decision": "accepted"})
@@ -165,17 +164,14 @@ except Exception as exc:  # noqa: BLE001
 
 finally:
     print("\n=== cleanup ===")
-    for key in ("ride_id", "ride2"):
-        rid = globals().get(key)
-        if rid:
-            try:
-                sql(f"delete from public.rides where id='{rid}';")
-            except Exception:
-                pass
-    try:
-        sql(f"delete from public.user_profiles where id in ('{VICTIM}','{ATTACKER}');")
-    except Exception as exc:  # noqa: BLE001
-        print(f"cleanup warning: {str(exc)[:160]}")
+    for stmt in (
+        f"delete from public.rides where user_id like 'test-rls-%-{TAG}';",
+        f"delete from public.user_profiles where id like 'test-rls-%-{TAG}';",
+    ):
+        try:
+            sql(stmt)
+        except Exception as exc:  # noqa: BLE001
+            print(f"cleanup warning: {str(exc)[:140]}")
     print("test rides and users removed")
 
 print("\n" + "=" * 54)
