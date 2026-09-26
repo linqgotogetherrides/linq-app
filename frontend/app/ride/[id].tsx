@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
+import ConfirmDialog from '@/src/components/ConfirmDialog';
 import PrimaryButton from '@/src/components/PrimaryButton';
 import LeafletMap from '@/src/components/LeafletMap';
 import { useApp } from '@/src/context/AppContext';
@@ -129,6 +130,9 @@ export default function RideDetails() {
     })();
   }, [id]);
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   if (!ride) {
     return (
       <SafeAreaView style={styles.container} edges={['top']} testID="ride-details-screen">
@@ -173,6 +177,48 @@ export default function RideDetails() {
       showToast(error instanceof Error ? error.message : 'The ride request could not be sent.');
     } finally {
       setRequesting(false);
+    }
+  };
+
+  const handleSearchAgainWithThisRide = () => {
+    const pLat = ride?.pickup?.latitude;
+    const pLng = ride?.pickup?.longitude;
+    const dLat = ride?.destination?.latitude;
+    const dLng = ride?.destination?.longitude;
+    router.push({
+      pathname: '/search-results',
+      params: {
+        pickup: ride.pickup.label,
+        destination: ride.destination.label,
+        type: ride.type,
+        travelTime: ride.time,
+        ...(pLat != null && pLng != null
+          ? {
+              pickupLatitude: String(pLat),
+              pickupLongitude: String(pLng),
+            }
+          : {}),
+        ...(dLat != null && dLng != null
+          ? {
+              destinationLatitude: String(dLat),
+              destinationLongitude: String(dLng),
+            }
+          : {}),
+      },
+    });
+  };
+
+  const handleDeleteThisRide = async () => {
+    if (!user?.id || !ride) return;
+    setDeleting(true);
+    const result = await rideService.deleteOwnRide(ride.id, user.id);
+    setDeleting(false);
+    setConfirmingDelete(false);
+    if (result.ok) {
+      showToast('Ride deleted.');
+      router.replace('/(tabs)/rides');
+    } else {
+      showToast(result.error ?? 'Could not delete this ride.');
     }
   };
 
@@ -342,13 +388,39 @@ export default function RideDetails() {
       <View style={styles.footer}>
         <View style={{ flex: 1 }}>
           {isOwnRide ? (
-            <PrimaryButton
-              testID="own-ride-button"
-              title="This is your ride"
-              variant="secondary"
-              icon="person-circle-outline"
-              onPress={() => router.replace('/(tabs)/rides')}
-            />
+            <View style={styles.ownerActions}>
+              <PrimaryButton
+                testID="own-ride-edit"
+                title="Edit the Ride"
+                icon="create-outline"
+                onPress={() =>
+                  router.push({
+                    pathname: '/create-ride',
+                    params: { rideId: ride.id },
+                  })
+                }
+              />
+              <View style={styles.ownerActionsRow}>
+                <View style={styles.ownerActionHalf}>
+                  <PrimaryButton
+                    testID="own-ride-search-again"
+                    title="Search Again"
+                    variant="secondary"
+                    icon="search-outline"
+                    onPress={handleSearchAgainWithThisRide}
+                  />
+                </View>
+                <View style={styles.ownerActionHalf}>
+                  <PrimaryButton
+                    testID="own-ride-delete"
+                    title="Delete"
+                    variant="secondary"
+                    icon="trash-outline"
+                    onPress={() => setConfirmingDelete(true)}
+                  />
+                </View>
+              </View>
+            </View>
           ) : (
             <PrimaryButton
               testID="request-ride-button"
@@ -361,6 +433,21 @@ export default function RideDetails() {
           )}
         </View>
       </View>
+
+      <ConfirmDialog
+        visible={confirmingDelete}
+        title="Are you sure you want to delete this ride?"
+        message={
+          ride
+            ? `${ride.pickup.label} to ${ride.destination.label} will be removed permanently.`
+            : undefined
+        }
+        cancelLabel="Go back"
+        confirmLabel="Yes, delete"
+        busy={deleting}
+        onCancel={() => setConfirmingDelete(false)}
+        onConfirm={() => void handleDeleteThisRide()}
+      />
     </SafeAreaView>
   );
 }
@@ -411,6 +498,9 @@ const styles = StyleSheet.create({
     fontSize: font.size.xs,
     fontWeight: font.weight.medium,
   },
+  ownerActions: { gap: spacing.sm },
+  ownerActionsRow: { flexDirection: 'row', gap: spacing.sm },
+  ownerActionHalf: { flex: 1 },
   routeLegend: {
     flexDirection: 'row',
     alignItems: 'center',

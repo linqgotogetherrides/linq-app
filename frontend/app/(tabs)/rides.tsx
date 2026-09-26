@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
+import ConfirmDialog from '@/src/components/ConfirmDialog';
 import EmptyState from '@/src/components/EmptyState';
 import GuestPrompt from '@/src/components/GuestPrompt';
 import NotificationButton from '@/src/components/NotificationButton';
@@ -96,43 +96,38 @@ export default function Rides() {
     });
   };
 
+  const [pendingDelete, setPendingDelete] = useState<Ride | null>(null);
+
   const handleDeleteRide = (ride: Ride) => {
-    Alert.alert(
-      'Delete this ride?',
-      `"${ride.pickup.label} to ${ride.destination.label}" will be removed permanently. Anyone who requested a seat on it will no longer see it.`,
-      [
-        { text: 'Keep it', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            if (!user?.id) return;
-            setBusyRideId(ride.id);
-            const result = await rideService.deleteOwnRide(ride.id, user.id);
-            setBusyRideId(null);
-            if (result.ok) {
-              showToast('Ride deleted.');
-              await loadRides();
-            } else {
-              showToast('Could not delete this ride.');
-            }
-          },
-        },
-      ],
-    );
+    setPendingDelete(ride);
   };
 
-  const handleDeleteDraft = async (ride: Ride) => {
-    if (!user?.id) return;
+  const confirmDeleteRide = async () => {
+    const ride = pendingDelete;
+    if (!ride || !user?.id) return;
     setBusyRideId(ride.id);
-    const result = await rideService.deleteRide(ride.id, user.id);
+    // Drafts go through the narrower delete; both are scoped to the owner.
+    const result =
+      ride.status === 'draft'
+        ? await rideService.deleteRide(ride.id, user.id)
+        : await rideService.deleteOwnRide(ride.id, user.id);
     setBusyRideId(null);
+    setPendingDelete(null);
     if (result.ok) {
-      showToast('Draft deleted.');
+      showToast(ride.status === 'draft' ? 'Draft deleted.' : 'Ride deleted.');
       await loadRides();
     } else {
-      showToast('Could not delete this draft.');
+      showToast(
+        result.error ??
+          (ride.status === 'draft'
+            ? 'Could not delete this draft.'
+            : 'Could not delete this ride.'),
+      );
     }
+  };
+
+  const handleDeleteDraft = (ride: Ride) => {
+    setPendingDelete(ride);
   };
 
   if (!user) {
@@ -224,7 +219,7 @@ export default function Rides() {
                 else router.push(`/ride/${ride.id}`);
               }}
               onPublish={ride.status === 'draft' ? () => void handlePublishDraft(ride) : undefined}
-              onDelete={ride.status === 'draft' ? () => void handleDeleteDraft(ride) : undefined}
+              onDelete={ride.status === 'draft' ? () => handleDeleteDraft(ride) : undefined}
               onEdit={
                 ride.status === 'draft'
                   ? undefined
@@ -240,6 +235,21 @@ export default function Rides() {
           ))
         )}
       </ScrollView>
+
+      <ConfirmDialog
+        visible={pendingDelete !== null}
+        title="Are you sure you want to delete this ride?"
+        message={
+          pendingDelete
+            ? `${pendingDelete.pickup.label} to ${pendingDelete.destination.label} will be removed permanently.`
+            : undefined
+        }
+        cancelLabel="Go back"
+        confirmLabel="Yes, delete"
+        busy={pendingDelete ? busyRideId === pendingDelete.id : false}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDeleteRide()}
+      />
     </SafeAreaView>
   );
 }

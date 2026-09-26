@@ -461,14 +461,17 @@ export const rideService = {
   },
 
   /** Deletes a draft. */
-  async deleteRide(rideId: string, userId: string): Promise<{ ok: boolean }> {
+  async deleteRide(
+    rideId: string,
+    userId: string,
+  ): Promise<{ ok: boolean; error?: string }> {
     const { error } = await supabase
       .from('rides')
       .delete()
       .eq('id', rideId)
       .eq('user_id', userId)
       .eq('status', 'draft');
-    return { ok: !error };
+    return { ok: !error, error: error?.message };
   },
 
   /**
