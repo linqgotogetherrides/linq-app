@@ -28,6 +28,29 @@ export default function RideCard({ ride, onRequest }: Props) {
   const router = useRouter();
   const { user } = useApp();
   
+  // The details screen can only draw "your route" if it knows your endpoints.
+  // They are the first and last vertices of the searched geometry, which is
+  // already attached to the ride by the search scorer.
+  const openDetails = () => {
+    const coords = ride.userRouteGeometry?.coordinates ?? [];
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+    router.push({
+      pathname: '/ride/[id]',
+      params: {
+        id: ride.id,
+        ...(first && last
+          ? {
+              userPickupLatitude: String(first[1]),
+              userPickupLongitude: String(first[0]),
+              userDestinationLatitude: String(last[1]),
+              userDestinationLongitude: String(last[0]),
+            }
+          : {}),
+      },
+    });
+  };
+
   const handleAuthRequiredAction = (action: () => void) => {
     if (!user) {
       router.push('/onboarding');
@@ -58,7 +81,7 @@ export default function RideCard({ ride, onRequest }: Props) {
   return (
     <Pressable
       testID={`ride-card-${ride.id}`}
-      onPress={() => handleAuthRequiredAction(() => router.push(`/ride/${ride.id}`))}
+      onPress={() => handleAuthRequiredAction(openDetails)}
       style={styles.card}
     >
       <View style={styles.headerRow}>
@@ -112,7 +135,7 @@ export default function RideCard({ ride, onRequest }: Props) {
           <Pressable
             style={styles.viewRouteBtn}
             testID={`view-route-${ride.id}`}
-            onPress={() => handleAuthRequiredAction(() => router.push(`/ride/${ride.id}`))}
+            onPress={() => handleAuthRequiredAction(openDetails)}
           >
             <Ionicons name="map-outline" size={14} color={colors.primary} />
             <Text style={styles.viewRouteText}>View full route</Text>
@@ -133,7 +156,7 @@ export default function RideCard({ ride, onRequest }: Props) {
           testID={`request-btn-${ride.id}`}
           onPress={() => handleAuthRequiredAction(() => {
             if (onRequest) onRequest();
-            else router.push(`/ride/${ride.id}`);
+            else openDetails();
           })}
           style={styles.requestBtn}
         >

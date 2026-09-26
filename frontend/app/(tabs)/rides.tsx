@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -76,6 +77,49 @@ export default function Rides() {
     } else {
       showToast('Could not publish this draft.');
     }
+  };
+
+  /** Searches again using this ride's own pickup/destination and coordinates. */
+  const handleSearchAgain = (ride: Ride) => {
+    router.push({
+      pathname: '/search-results',
+      params: {
+        pickup: ride.pickup.label,
+        destination: ride.destination.label,
+        type: ride.type,
+        travelTime: ride.time,
+        pickupLatitude: ride.pickup.latitude?.toString(),
+        pickupLongitude: ride.pickup.longitude?.toString(),
+        destinationLatitude: ride.destination.latitude?.toString(),
+        destinationLongitude: ride.destination.longitude?.toString(),
+      },
+    });
+  };
+
+  const handleDeleteRide = (ride: Ride) => {
+    Alert.alert(
+      'Delete this ride?',
+      `"${ride.pickup.label} to ${ride.destination.label}" will be removed permanently. Anyone who requested a seat on it will no longer see it.`,
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (!user?.id) return;
+            setBusyRideId(ride.id);
+            const result = await rideService.deleteOwnRide(ride.id, user.id);
+            setBusyRideId(null);
+            if (result.ok) {
+              showToast('Ride deleted.');
+              await loadRides();
+            } else {
+              showToast('Could not delete this ride.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleDeleteDraft = async (ride: Ride) => {
@@ -181,6 +225,17 @@ export default function Rides() {
               }}
               onPublish={ride.status === 'draft' ? () => void handlePublishDraft(ride) : undefined}
               onDelete={ride.status === 'draft' ? () => void handleDeleteDraft(ride) : undefined}
+              onEdit={
+                ride.status === 'draft'
+                  ? undefined
+                  : () => router.push(`/create-ride?rideId=${ride.id}`)
+              }
+              onDeleteRide={
+                ride.status === 'draft' ? undefined : () => handleDeleteRide(ride)
+              }
+              onSearchAgain={
+                ride.status === 'draft' ? undefined : () => handleSearchAgain(ride)
+              }
             />
           ))
         )}
@@ -196,6 +251,9 @@ function RideManagementCard({
   onPress,
   onPublish,
   onDelete,
+  onEdit,
+  onDeleteRide,
+  onSearchAgain,
 }: {
   ride: Ride;
   acceptedRequest?: RideRequest;
@@ -203,6 +261,9 @@ function RideManagementCard({
   onPress: () => void;
   onPublish?: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
+  onDeleteRide?: () => void;
+  onSearchAgain?: () => void;
 }) {
   const isDraft = ride.status === 'draft';
   const confirmed = ride.status === 'confirmed' || Boolean(acceptedRequest);
@@ -332,19 +393,77 @@ function RideManagementCard({
           </View>
         </>
       ) : (
-        <View style={styles.cardFooter}>
-          <View style={styles.footerMetric}>
-            <Ionicons name="people-outline" size={15} color={colors.textSecondary} />
-            <Text style={styles.footerText}>
-              {ride.seatsAvailable} {ride.seatsAvailable === 1 ? 'seat' : 'seats'} available
-            </Text>
+        <>
+          <View style={styles.cardFooter}>
+            <View style={styles.footerMetric}>
+              <Ionicons name="people-outline" size={15} color={colors.textSecondary} />
+              <Text style={styles.footerText}>
+                {ride.seatsAvailable} {ride.seatsAvailable === 1 ? 'seat' : 'seats'} available
+              </Text>
+            </View>
+            {ride.pricePerSeat > 0 ? (
+              <Text style={styles.price}>₹{ride.pricePerSeat.toFixed(0)}/seat</Text>
+            ) : null}
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </View>
-          {ride.pricePerSeat > 0 ? (
-            <Text style={styles.price}>₹{ride.pricePerSeat.toFixed(0)}/seat</Text>
+
+          {onEdit || onDeleteRide || onSearchAgain ? (
+            <View style={styles.manageRow} testID={`ride-manage-${ride.id}`}>
+              {onEdit ? (
+                <ManageAction
+                  icon="create-outline"
+                  label="Edit the Ride"
+                  onPress={onEdit}
+                  testID={`edit-ride-${ride.id}`}
+                />
+              ) : null}
+              {onSearchAgain ? (
+                <ManageAction
+                  icon="search-outline"
+                  label="Search again"
+                  onPress={onSearchAgain}
+                  testID={`search-again-${ride.id}`}
+                />
+              ) : null}
+              {onDeleteRide ? (
+                <ManageAction
+                  icon="trash-outline"
+                  label="Delete"
+                  danger
+                  onPress={onDeleteRide}
+                  testID={`delete-ride-${ride.id}`}
+                />
+              ) : null}
+            </View>
           ) : null}
-          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-        </View>
+        </>
       )}
+    </Pressable>
+  );
+}
+
+function ManageAction({
+  icon,
+  label,
+  onPress,
+  danger,
+  testID,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+  testID?: string;
+}) {
+  const tint = danger ? colors.error : colors.primary;
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.manageAction, pressed && styles.pressed]}
+      onPress={onPress}
+      testID={testID}
+    >
+      <Ionicons name={icon} size={15} color={tint} />
+      <Text style={[styles.manageText, danger && { color: colors.error }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -527,6 +646,28 @@ const styles = StyleSheet.create({
     fontWeight: font.weight.medium,
     marginTop: 1,
   },
+  manageRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+  },
+  manageAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  manageText: { fontSize: font.size.xs, color: colors.primary, fontWeight: font.weight.medium },
+  pressed: { opacity: 0.7 },
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',

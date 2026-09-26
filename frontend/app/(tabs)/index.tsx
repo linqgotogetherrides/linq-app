@@ -114,10 +114,11 @@ export default function Home() {
         type: mode,
         pickupCoordinates: origin,
         radiusMeters: 25_000,
+        excludeUserId: user?.id,
       });
       if (requestId === nearbyRequestIdRef.current) setNearbyRides(data);
     })();
-  }, [currentLocation, mode, pickupCoordinates]);
+  }, [currentLocation, mode, pickupCoordinates, user?.id]);
 
   // Modals
   const [timePicker, setTimePicker] = useState<null | 'travel' | 'return'>(null);

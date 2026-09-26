@@ -84,6 +84,8 @@ export default function SearchResults() {
         time: params.travelTime,
         pickupCoordinates,
         destinationCoordinates,
+        // Never offer the rider their own post back as a ride twin.
+        excludeUserId: user?.id,
       });
       if (requestId === loadRequestId.current) setRides(data);
     } catch {
@@ -92,6 +94,7 @@ export default function SearchResults() {
       if (requestId === loadRequestId.current) setLoading(false);
     }
   }, [
+    user?.id,
     params.destination,
     params.destinationAccuracy,
     params.destinationLatitude,

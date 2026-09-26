@@ -215,6 +215,11 @@ export type SearchQuery = {
   pickupCoordinates?: LocationCoordinates;
   destinationCoordinates?: LocationCoordinates;
   radiusMeters?: number;
+  /**
+   * The signed-in rider. Their own posts are never offered back to them as a
+   * "ride twin" — you cannot share a seat with yourself.
+   */
+  excludeUserId?: string;
 };
 
 /** `data.date` is often an empty string; Postgres rejects "" for a date column. */
@@ -231,6 +236,11 @@ export const rideService = {
   async getRides(query: SearchQuery = {}): Promise<Ride[]> {
     const databaseRides = await loadDbRides(false);
     let rides = mergeRides(databaseRides, [...createdRides, ...mockRides]);
+
+    if (query.excludeUserId) {
+      const selfId = query.excludeUserId;
+      rides = rides.filter((ride) => ride.creator.id !== selfId);
+    }
 
     if (query.type) {
       rides = rides.filter((ride) => ride.type === query.type);
@@ -450,6 +460,7 @@ export const rideService = {
     return { ok: !error };
   },
 
+  /** Deletes a draft. */
   async deleteRide(rideId: string, userId: string): Promise<{ ok: boolean }> {
     const { error } = await supabase
       .from('rides')
@@ -458,5 +469,51 @@ export const rideService = {
       .eq('user_id', userId)
       .eq('status', 'draft');
     return { ok: !error };
+  },
+
+  /**
+   * Deletes any ride the caller owns, not just drafts.
+   * The `.eq('user_id', userId)` guard is the important part: a client can only
+   * ever remove its own post.
+   */
+  async deleteOwnRide(rideId: string, userId: string): Promise<{ ok: boolean; error?: string }> {
+    const { error } = await supabase
+      .from('rides')
+      .delete()
+      .eq('id', rideId)
+      .eq('user_id', userId);
+    return { ok: !error, error: error?.message };
+  },
+
+  /** Updates a ride the caller owns. */
+  async updateOwnRide(
+    rideId: string,
+    userId: string,
+    patch: Partial<Ride>,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const body: Record<string, unknown> = {};
+    if (patch.time !== undefined) body.travel_time = toSupabaseTime(patch.time);
+    if (patch.returnTime !== undefined) body.return_time = toSupabaseTime(patch.returnTime);
+    if (patch.date !== undefined) body.travel_date = toNullableDate(patch.date);
+    if (patch.days !== undefined) body.selected_days = dayLabelsToIndexes(patch.days);
+    if (patch.pricePerSeat !== undefined) body.price_per_seat = patch.pricePerSeat;
+    if (patch.seatsAvailable !== undefined) body.available_seats = Math.max(0, patch.seatsAvailable);
+    if (patch.womenOnly !== undefined) body.women_only = patch.womenOnly;
+    if (patch.status !== undefined) body.status = patch.status;
+    if (patch.pickup?.address || patch.pickup?.label) {
+      body.pickup_address = patch.pickup.address || patch.pickup.label;
+    }
+    if (patch.destination?.address || patch.destination?.label) {
+      body.dropoff_address = patch.destination.address || patch.destination.label;
+    }
+
+    if (Object.keys(body).length === 0) return { ok: true };
+
+    const { error } = await supabase
+      .from('rides')
+      .update(body)
+      .eq('id', rideId)
+      .eq('user_id', userId);
+    return { ok: !error, error: error?.message };
   },
 };

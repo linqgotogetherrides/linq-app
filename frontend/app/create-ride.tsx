@@ -31,6 +31,7 @@ const DAY_PRESETS = [
 export default function CreateRide() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    rideId?: string;
     pickup?: string;
     destination?: string;
     type?: string;
@@ -120,6 +121,44 @@ export default function CreateRide() {
   const [passengers, setPassengers] = useState<{ name: string; sub: string; self?: boolean; data?: PassengerData }[]>([
     { name: 'Passenger 1', sub: 'Myself', self: true },
   ]);
+
+  // Editing an existing post: load it once and prefill the form.
+  const [editingRideId, setEditingRideId] = useState<string | null>(params.rideId ?? null);
+
+  React.useEffect(() => {
+    if (!params.rideId || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      const rideId = params.rideId;
+      if (!rideId) return;
+      const existing = await rideService.getRideById(rideId);
+      if (cancelled || !existing) return;
+      setPickup(existing.pickup.label);
+      if (existing.pickup.latitude != null && existing.pickup.longitude != null) {
+        setPickupCoordinates({
+          latitude: existing.pickup.latitude,
+          longitude: existing.pickup.longitude,
+        });
+      }
+      setDestination(existing.destination.label);
+      if (existing.destination.latitude != null && existing.destination.longitude != null) {
+        setDestinationCoordinates({
+          latitude: existing.destination.latitude,
+          longitude: existing.destination.longitude,
+        });
+      }
+      setTravelTime(existing.time || '08:00 AM');
+      setReturnTime(existing.returnTime || '06:00 PM');
+      setTravelDate(existing.date || '');
+      setPrice(existing.pricePerSeat || 0);
+      setRideType(existing.type === 'planned' ? 'planned' : 'daily');
+      setWomenOnly(existing.womenOnly ?? false);
+      setAvailableSeats(Math.max(1, existing.seatsAvailable || 1));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.rideId, user?.id]);
 
   React.useEffect(() => {
     if (!locationFlowResult || locationFlowResult.source !== 'create-ride') return;
@@ -234,6 +273,35 @@ export default function CreateRide() {
   };
 
   const saveRide = async (status: 'active' | 'draft') => {
+    if (editingRideId && user?.id) {
+      // Update the existing post rather than creating a second one.
+      setPublishing(true);
+      try {
+        const result = await rideService.updateOwnRide(editingRideId, user.id, {
+          time: travelTime,
+          returnTime,
+          date: travelDate,
+          pricePerSeat: price,
+          seatsAvailable: availableSeats,
+          womenOnly,
+          status,
+          pickup: { label: pickup, address: pickup },
+          destination: { label: destination, address: destination },
+        });
+        if (!result.ok) throw new Error(result.error ?? 'Could not update the ride');
+        clearRideDraft();
+        setEditingRideId(null);
+        setPublished(true);
+        setPublishedStatus(status);
+        return true;
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not update the ride.');
+        return false;
+      } finally {
+        setPublishing(false);
+      }
+    }
+
     if (!user) {
       router.replace('/onboarding');
       return false;
@@ -329,7 +397,7 @@ export default function CreateRide() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="create-ride-screen">
-      <LinqHeader title="Create Your Ride" onBack={() => router.replace('/(tabs)')} />
+      <LinqHeader title={editingRideId ? 'Edit Ride' : 'Create Your Ride'} onBack={() => router.replace('/(tabs)')} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.xl, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.intro}>Got empty seats? Share your ride, split travel expenses, and connect with verified commuters nearby.</Text>

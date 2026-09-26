@@ -35,7 +35,23 @@ function getRideCoordinates(place: {
 }
 
 export default function RideDetails() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // The searcher's own route is viewer-relative, so it is not stored on the
+  // ride. It arrives as coordinates from the card that was tapped and is turned
+  // back into geometry here. OSRM responses are module-cached, so this is
+  // instant for a route that was already drawn in the search results.
+  const {
+    id,
+    userPickupLatitude,
+    userPickupLongitude,
+    userDestinationLatitude,
+    userDestinationLongitude,
+  } = useLocalSearchParams<{
+    id: string;
+    userPickupLatitude?: string;
+    userPickupLongitude?: string;
+    userDestinationLatitude?: string;
+    userDestinationLongitude?: string;
+  }>();
   const router = useRouter();
   const { user, useRequest: consumeRequest, showToast } = useApp();
   const {
@@ -47,6 +63,7 @@ export default function RideDetails() {
   const [requested, setRequested] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [routeGeometry, setRouteGeometry] = useState<RouteGeometry | undefined>();
+  const [userRouteGeometry, setUserRouteGeometry] = useState<RouteGeometry | undefined>();
   const [centerOnCurrentLocation, setCenterOnCurrentLocation] = useState(false);
   const initialLocationCenteredRef = useRef(false);
 
@@ -62,6 +79,31 @@ export default function RideDetails() {
     const timer = setTimeout(() => setCenterOnCurrentLocation(false), 500);
     return () => clearTimeout(timer);
   }, [centerOnCurrentLocation, currentLocation]);
+
+  useEffect(() => {
+    const pLat = Number(userPickupLatitude);
+    const pLng = Number(userPickupLongitude);
+    const dLat = Number(userDestinationLatitude);
+    const dLng = Number(userDestinationLongitude);
+    if (![pLat, pLng, dLat, dLng].every(Number.isFinite)) {
+      setUserRouteGeometry(undefined);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const route = await fetchOSRMRoute(
+        { latitude: pLat, longitude: pLng },
+        { latitude: dLat, longitude: dLng },
+      );
+      if (cancelled) return;
+      // Only real road geometry is drawn; a straight-line fallback would be
+      // misleading next to a genuine route.
+      setUserRouteGeometry(route.source === 'road' ? route.geometry : undefined);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userPickupLatitude, userPickupLongitude, userDestinationLatitude, userDestinationLongitude]);
 
   useEffect(() => {
     (async () => {
@@ -177,7 +219,7 @@ export default function RideDetails() {
                 pickup={pickupCoords}
                 destination={dropCoords}
                 driverRoute={routeGeometry}
-                userRoute={ride.userRouteGeometry}
+                userRoute={userRouteGeometry ?? ride.userRouteGeometry}
                 pickupLabel={ride.pickup.label}
                 destinationLabel={ride.destination.label}
                 currentLocation={currentLocation || undefined}
@@ -185,7 +227,7 @@ export default function RideDetails() {
                 allowStraightLineFallback={false}
                 height={260}
               />
-              {ride.userRouteGeometry ? (
+              {userRouteGeometry ?? ride.userRouteGeometry ? (
                 <View style={styles.routeLegend} testID="ride-route-legend">
                   <View style={[styles.legendSwatch, { backgroundColor: colors.primary }]} />
                   <Text style={styles.legendText}>Your searched route</Text>
