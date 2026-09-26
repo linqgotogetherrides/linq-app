@@ -28,6 +28,9 @@ export default function RideCard({ ride, onRequest }: Props) {
   const router = useRouter();
   const { user } = useApp();
   
+  // The server rejects a self-request outright, so do not offer the button.
+  const isOwnRide = Boolean(user?.id && ride.creator?.id === user.id);
+
   // The details screen can only draw "your route" if it knows your endpoints.
   // They are the first and last vertices of the searched geometry, which is
   // already attached to the ride by the search scorer.
@@ -152,22 +155,37 @@ export default function RideCard({ ride, onRequest }: Props) {
           <TagPill label={secondaryTag} />
           {ride.womenOnly && <TagPill label="WOMEN ONLY" variant="women" />}
         </View>
-        <Pressable
-          testID={`request-btn-${ride.id}`}
-          onPress={() => handleAuthRequiredAction(() => {
-            if (onRequest) onRequest();
-            else openDetails();
-          })}
-          style={styles.requestBtn}
-        >
-          <Text style={styles.requestText}>Request</Text>
-        </Pressable>
+        {isOwnRide ? (
+          <View style={[styles.requestBtn, styles.ownBadge]}>
+            <Ionicons name="person-circle-outline" size={14} color={colors.textSecondary} />
+            <Text style={[styles.requestText, { color: colors.textSecondary }]}>Your ride</Text>
+          </View>
+        ) : (
+          <Pressable
+            testID={`request-btn-${ride.id}`}
+            onPress={() => handleAuthRequiredAction(() => {
+              if (onRequest) onRequest();
+              else openDetails();
+            })}
+            style={styles.requestBtn}
+          >
+            <Text style={styles.requestText}>Request</Text>
+          </Pressable>
+        )}
       </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  ownBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

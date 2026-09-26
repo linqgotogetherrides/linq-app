@@ -61,6 +61,9 @@ export default function RideDetails() {
   } = useCurrentLocation({ autoLoad: true });
   const [ride, setRide] = useState<Ride | null>(null);
   const [requested, setRequested] = useState(false);
+  // request_ride() rejects self-requests server-side; reflect that in the UI so
+  // the CTA is never a button that can only fail.
+  const isOwnRide = Boolean(user?.id && ride?.creator?.id === user.id);
   const [requesting, setRequesting] = useState(false);
   const [routeGeometry, setRouteGeometry] = useState<RouteGeometry | undefined>();
   const [userRouteGeometry, setUserRouteGeometry] = useState<RouteGeometry | undefined>();
@@ -146,6 +149,10 @@ export default function RideDetails() {
       return;
     }
     if (requesting) return;
+    if (ride.creator?.id === user.id) {
+      showToast('You cannot request your own ride.');
+      return;
+    }
     if (requested) {
       setRequested(false);
       showToast('Request cancelled');
@@ -334,14 +341,24 @@ export default function RideDetails() {
       {/* Sticky Bottom Primary CTA */}
       <View style={styles.footer}>
         <View style={{ flex: 1 }}>
-          <PrimaryButton
-            testID="request-ride-button"
-            title={requesting ? 'Sending Request…' : requested ? 'Cancel Request' : 'Request Ride'}
-            variant={requested ? 'secondary' : 'primary'}
-            icon={requested ? 'close-circle' : 'flash'}
-            loading={requesting}
-            onPress={onRequest}
-          />
+          {isOwnRide ? (
+            <PrimaryButton
+              testID="own-ride-button"
+              title="This is your ride"
+              variant="secondary"
+              icon="person-circle-outline"
+              onPress={() => router.replace('/(tabs)/rides')}
+            />
+          ) : (
+            <PrimaryButton
+              testID="request-ride-button"
+              title={requesting ? 'Sending Request…' : requested ? 'Cancel Request' : 'Request Ride'}
+              variant={requested ? 'secondary' : 'primary'}
+              icon={requested ? 'close-circle' : 'flash'}
+              loading={requesting}
+              onPress={onRequest}
+            />
+          )}
         </View>
       </View>
     </SafeAreaView>

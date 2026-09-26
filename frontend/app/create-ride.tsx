@@ -122,6 +122,14 @@ export default function CreateRide() {
     { name: 'Passenger 1', sub: 'Myself', self: true },
   ]);
 
+  // One source of truth for the displayed price. Previously the label showed the
+  // raw state (0 on a fresh form) while the slider thumb sat at its floor, so
+  // the two disagreed about what the price was.
+  const priceFloor = 50;
+  const priceCeiling = 300;
+  const sliderPrice = Math.min(priceCeiling, Math.max(priceFloor, price || 0));
+  const priceIsSet = price >= priceFloor;
+
   // Editing an existing post: load it once and prefill the form.
   const [editingRideId, setEditingRideId] = useState<string | null>(params.rideId ?? null);
 
@@ -273,6 +281,12 @@ export default function CreateRide() {
   };
 
   const saveRide = async (status: 'active' | 'draft') => {
+    // A price of 0 is "not set", not free. Refuse to publish rather than write a
+    // row that later renders as a bogus Rs 0 seat.
+    if (!priceIsSet) {
+      showToast('Set a price per seat before saving.');
+      return;
+    }
     if (editingRideId && user?.id) {
       // Update the existing post rather than creating a second one.
       setPublishing(true);
@@ -585,14 +599,16 @@ export default function CreateRide() {
 
                 <View style={styles.rowBetween}>
                   <Text style={styles.smallLabelCaps}>Price Per Seat</Text>
-                  <Text style={styles.priceVal}>₹{price}</Text>
+                  <Text style={[styles.priceVal, !priceIsSet && styles.priceUnset]}>
+                    {priceIsSet ? `₹${sliderPrice}` : 'Not set'}
+                  </Text>
                 </View>
                 <Slider
                   style={{ width: '100%', height: 40, marginTop: spacing.xs, marginBottom: -spacing.xs }}
-                  minimumValue={50}
-                  maximumValue={300}
+                  minimumValue={priceFloor}
+                  maximumValue={priceCeiling}
                   step={10}
-                  value={Math.min(300, Math.max(50, price || 50))}
+                  value={sliderPrice}
                   onValueChange={setPrice}
                   minimumTrackTintColor={colors.primary}
                   maximumTrackTintColor={colors.surfaceSecondary}
@@ -600,7 +616,9 @@ export default function CreateRide() {
                 />
                 <View style={styles.rowBetween}><Text style={styles.sliderEnd}>₹50</Text><Text style={styles.sliderEnd}>₹300</Text></View>
                 <Text style={styles.note}>
-                  Suggested at ₹2 per km for your {routeMetrics?.distanceMeters ? `${(routeMetrics.distanceMeters / 1000).toFixed(1)} km` : 'route'}. Drag to adjust.
+                  {routeMetrics?.distanceMeters
+                    ? `Suggested at ₹2 per km for your ${(routeMetrics.distanceMeters / 1000).toFixed(1)} km. Drag to adjust.`
+                    : 'Pick your pickup and destination to get a suggested price, or drag to set your own.'}
                 </Text>
               </View>
             )}
@@ -761,6 +779,7 @@ const styles = StyleSheet.create({
   inputText: { fontSize: font.size.base, color: colors.textPrimary },
   seatsGrid: { flexDirection: 'row', gap: spacing.lg, marginBottom: spacing.md },
   priceVal: { fontSize: font.size.lg, color: colors.primary, fontWeight: font.weight.medium },
+  priceUnset: { color: colors.textTertiary },
   sliderTrack: { height: 6, backgroundColor: colors.surfaceSecondary, borderRadius: 3, marginTop: spacing.md, marginBottom: spacing.sm, justifyContent: 'center' },
   sliderFill: { height: 6, backgroundColor: colors.primary, borderRadius: 3 },
   sliderThumb: { position: 'absolute', width: 22, height: 22, borderRadius: 11, backgroundColor: colors.primary, borderWidth: 3, borderColor: colors.surface, marginLeft: -11, ...shadow.sm },
