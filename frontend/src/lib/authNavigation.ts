@@ -9,9 +9,9 @@ import type { Href } from 'expo-router';
 /**
  * Reachable without an account.
  *
- * '/' is deliberately absent. It used to be the splash, which is now a loading
- * state inside AuthGate rather than a route, so '/' is the tabs home and must
- * be gated like any other screen.
+ * '/' is the splash, which is public. The tabs home lives at '/(tabs)/home' so
+ * it does not collide with the splash at '/', and it is gated like any other
+ * screen.
  *
  * `/sos/confirm` is here on purpose: it is the target of the lock-screen and
  * home-screen SOS tile, and it already handles a visitor with no account by
@@ -21,6 +21,8 @@ import type { Href } from 'expo-router';
  * once a signed-in rider has activated one.
  */
 export const PUBLIC_ROUTES = new Set([
+  '/',
+  '/index',
   '/onboarding',
   '/login',
   '/otp',
@@ -56,7 +58,7 @@ export function sanitizeNext(next: unknown): string | undefined {
 }
 
 /** Default landing spot once an account exists. */
-export const DEFAULT_HOME = '/(tabs)' as const;
+export const DEFAULT_HOME = '/(tabs)/home' as const;
 
 /**
  * Where to send a rider after the flow finishes: the page they originally

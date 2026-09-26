@@ -27,7 +27,7 @@ export default function LinqHeader({
   right,
   showBack = true,
   transparent,
-  fallbackHref = '/(tabs)' as Href,
+  fallbackHref = '/(tabs)/home' as Href,
 }: Props) {
   const router = useRouter();
 

@@ -416,7 +416,7 @@ export default function RideLocationFlow() {
         } else if (router.canGoBack()) {
           router.back();
         } else {
-          router.replace(source === 'home' ? '/(tabs)' : '/create-ride');
+          router.replace(source === 'home' ? '/(tabs)/home' : '/create-ride');
         }
         break;
       case 'route':
@@ -424,7 +424,7 @@ export default function RideLocationFlow() {
         break;
       default:
         if (router.canGoBack()) router.back();
-        else router.replace(source === 'home' ? '/(tabs)' : '/create-ride');
+        else router.replace(source === 'home' ? '/(tabs)/home' : '/create-ride');
     }
   };
 
@@ -439,7 +439,7 @@ export default function RideLocationFlow() {
       durationSeconds: route.duration,
     });
     if (router.canGoBack()) router.back();
-    else router.replace(source === 'home' ? '/(tabs)' : '/create-ride');
+    else router.replace(source === 'home' ? '/(tabs)/home' : '/create-ride');
   };
 
   const renderProgress = () => {

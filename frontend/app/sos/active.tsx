@@ -131,7 +131,7 @@ export default function SosActive() {
           ? 'SOS ended. Location sharing has stopped.'
           : 'SOS cancelled. Location sharing has stopped.',
       );
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home');
     }
   };
 

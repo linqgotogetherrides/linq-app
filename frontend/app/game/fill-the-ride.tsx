@@ -123,7 +123,7 @@ export default function FillTheRide() {
    */
   const exitGame = useCallback(() => {
     if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)');
+    else router.replace('/(tabs)/home');
   }, [router]);
 
   // Swipe controls.

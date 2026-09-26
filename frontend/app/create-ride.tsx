@@ -458,7 +458,7 @@ export default function CreateRide() {
           </Text>
           <View style={{ alignSelf: 'stretch', marginTop: spacing['2xl'], gap: spacing.md }}>
             <PrimaryButton title="View My Rides" icon="car" onPress={() => router.replace('/(tabs)/rides')} />
-            <PrimaryButton title="Back to Home" variant="secondary" onPress={() => router.replace('/(tabs)')} />
+            <PrimaryButton title="Back to Home" variant="secondary" onPress={() => router.replace('/(tabs)/home')} />
           </View>
         </View>
       </SafeAreaView>
@@ -467,7 +467,7 @@ export default function CreateRide() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="create-ride-screen">
-      <LinqHeader title={editingRideId ? 'Edit Ride' : 'Create Your Ride'} onBack={() => router.replace('/(tabs)')} />
+      <LinqHeader title={editingRideId ? 'Edit Ride' : 'Create Your Ride'} onBack={() => router.replace('/(tabs)/home')} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.xl, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.intro}>Got empty seats? Share your ride, split travel expenses, and connect with verified commuters nearby.</Text>

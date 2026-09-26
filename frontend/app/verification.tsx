@@ -26,7 +26,7 @@ export default function Verification() {
 
   const handleContinue = async () => {
     if (!uid) {
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home');
       return;
     }
     
@@ -41,10 +41,10 @@ export default function Verification() {
       
       await fetchUserProfile(uid);
       showToast('Welcome to LinQ!');
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home');
     } catch (e: any) {
       showToast(e.message || 'Error saving verification status');
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home');
     } finally {
       setLoading(false);
     }
@@ -55,7 +55,7 @@ export default function Verification() {
       <ScrollView contentContainerStyle={{ padding: spacing.xl, paddingBottom: spacing['3xl'] }}>
         <View style={styles.top}>
           <LinqLogo size={40} showText={false} />
-          <Pressable onPress={() => router.replace('/(tabs)')} testID="skip-verify">
+          <Pressable onPress={() => router.replace('/(tabs)/home')} testID="skip-verify">
             <Text style={styles.skip}>Skip</Text>
           </Pressable>
         </View>
@@ -97,7 +97,7 @@ export default function Verification() {
             </View>
           </View>
 
-          <Pressable onPress={() => router.replace('/(tabs)')} testID="skip-later">
+          <Pressable onPress={() => router.replace('/(tabs)/home')} testID="skip-later">
             <Text style={styles.skipLater}>Skip for now</Text>
           </Pressable>
 
