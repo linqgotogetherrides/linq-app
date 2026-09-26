@@ -5,6 +5,7 @@
 // the server decides what that is worth.
 
 import { supabase } from '@/src/lib/supabase';
+import { ensureUserProfile } from '@/src/services/userProfile';
 import { GAME_CONFIG } from './constants';
 
 export type GameProfile = {
@@ -41,6 +42,15 @@ export type SettleResult = {
   note?: string;
 };
 
+/** A rider-facing reason, instead of a bare HTTP status. */
+function describeGameError(message: string, code?: string): string {
+  const text = (message || '').toLowerCase();
+  if (text.includes('foreign key') || code === '23503') {
+    return 'Your rider profile could not be loaded, so your lives are unavailable right now.';
+  }
+  return message || 'Could not load your game profile.';
+}
+
 function toProfile(row: Record<string, unknown>): GameProfile {
   return {
     user_id: String(row.user_id),
@@ -60,8 +70,19 @@ function toProfile(row: Record<string, unknown>): GameProfile {
 
 export const gameApi = {
   async getProfile(userId: string): Promise<GameProfile | null> {
-    const { data, error } = await supabase.rpc('get_game_profile', { p_user_id: userId });
-    if (error) throw new Error(error.message);
+    let { data, error } = await supabase.rpc('get_game_profile', { p_user_id: userId });
+
+    // get_game_profile creates the game_profiles row, whose user_id is a foreign
+    // key onto user_profiles. Without that row the whole call fails with a bare
+    // 409 and the player is shown no lives at all. Create it and try once more.
+    if (error) {
+      const healed = await ensureUserProfile({ userId });
+      if (healed.ok) {
+        ({ data, error } = await supabase.rpc('get_game_profile', { p_user_id: userId }));
+      }
+    }
+
+    if (error) throw new Error(describeGameError(error.message, error.code));
     if (!data) return null;
     return toProfile(data as Record<string, unknown>);
   },

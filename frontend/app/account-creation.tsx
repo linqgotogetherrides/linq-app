@@ -162,10 +162,20 @@ export default function AccountCreation() {
 
       const { error } = await supabase.from('user_profiles').upsert(profileData);
       if (error) {
-        console.warn('Supabase profile creation fallback:', error.message);
+        // Do not claim success on a failed write. A rider left without a
+        // user_profiles row cannot open the referral game or request a seat,
+        // because both tables reference this one. Say so, and keep going only
+        // if the row genuinely landed.
+        console.warn('Supabase profile creation failed:', error.message);
+        showToast('Profile could not be saved. Please try again.');
+        return;
       }
 
-      await fetchUserProfile(targetUid);
+      const created = await fetchUserProfile(targetUid);
+      if (!created) {
+        showToast('Profile could not be verified. Please try again.');
+        return;
+      }
       showToast('Profile created successfully!');
       router.replace('/(tabs)');
     } catch (e: any) {

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import type {
   AccessState,
   LocationFlowResult,
@@ -11,6 +12,7 @@ import type {
   VerificationDocument,
 } from '@/src/types';
 import { supabase } from '@/src/lib/supabase';
+import { ensureUserProfile } from '@/src/services/userProfile';
 import { rideRequestService } from '@/src/services/rideRequestService';
 
 interface AppContextValue {
@@ -186,7 +188,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       )
       .subscribe();
 
+    // Realtime is the fast path, but the socket drops on flaky mobile networks
+    // and stays down, which would leave the rider looking at stale requests with
+    // no way to tell. A slow foreground-only poll keeps things roughly current
+    // when the websocket is unavailable, and costs nothing while backgrounded.
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (poll) return;
+      poll = setInterval(() => void refreshRideActivity(), 45_000);
+    };
+    const stopPolling = () => {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    };
+
+    const appStateSub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') {
+        void refreshRideActivity();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    });
+    startPolling();
+
     return () => {
+      stopPolling();
+      appStateSub.remove();
       void supabase.removeChannel(channel);
     };
   }, [refreshRideActivity, user?.id]);
@@ -244,6 +273,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, [showToast, user]);
 
+  /** Maps a user_profiles row onto the app's User shape and publishes it. */
+  const mapAndSet = (data: Record<string, any>): User => {
+    const mappedUser: User = {
+      id: data.id,
+      name: data.name || '',
+      age: data.age || undefined,
+      gender: data.gender || undefined,
+      womenOnlyMode: data.women_only_mode,
+      bio: data.bio || undefined,
+      phone: normalizePhone(data.phone_number),
+      email: data.email || undefined,
+      avatarUrl: normalizeAvatarUrl(data.avatar_url),
+      rating: data.rating,
+      trips: data.total_trips,
+      co2Saved: data.co2_saved_kg,
+      verification: data.verification_status,
+      verificationDocument: normalizeVerificationDocument(
+        data.verification_document || data.verification_doc
+      ),
+      emergencyContact: normalizePhone(data.emergency_contact),
+      homeAddress: data.home_address || undefined,
+      officeAddress: data.office_address || undefined,
+      collegeAddress: data.college_address || undefined,
+      savedLocations: normalizeSavedLocations(data.saved_locations),
+    };
+    setUser(mappedUser);
+    setIsAuthed(true);
+    return mappedUser;
+  };
+
   const fetchUserProfile = async (uid: string): Promise<User | null> => {
     try {
       const { data, error } = await supabase
@@ -253,37 +312,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
         
       if (error || !data) {
-        console.log('User profile not found in Supabase:', error?.message);
-        return null;
+        // No profile row. Every feature with a foreign key onto user_profiles
+        // (the referral game, seat requests, notifications) would fail with a
+        // bare 409, so create it now rather than leaving the rider stuck.
+        const created = await ensureUserProfile({ userId: uid });
+        if (!created.ok) {
+          console.warn('Could not create the Supabase profile row:', created.error);
+          return null;
+        }
+        const { data: healed, error: healError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', uid)
+          .maybeSingle();
+        if (healError || !healed) {
+          console.warn('Profile row created but could not be read back:', healError?.message);
+          return null;
+        }
+        return mapAndSet(healed);
       }
-      
-      const mappedUser: User = {
-        id: data.id,
-        name: data.name || '',
-        age: data.age || undefined,
-        gender: data.gender || undefined,
-        womenOnlyMode: data.women_only_mode,
-        bio: data.bio || undefined,
-        phone: normalizePhone(data.phone_number),
-        email: data.email || undefined,
-        avatarUrl: normalizeAvatarUrl(data.avatar_url),
-        rating: data.rating,
-        trips: data.total_trips,
-        co2Saved: data.co2_saved_kg,
-        verification: data.verification_status,
-        verificationDocument: normalizeVerificationDocument(
-          data.verification_document || data.verification_doc
-        ),
-        emergencyContact: normalizePhone(data.emergency_contact),
-        homeAddress: data.home_address || undefined,
-        officeAddress: data.office_address || undefined,
-        collegeAddress: data.college_address || undefined,
-        savedLocations: normalizeSavedLocations(data.saved_locations),
-      };
-      
-      setUser(mappedUser);
-      setIsAuthed(true);
-      return mappedUser;
+
+      return mapAndSet(data);
     } catch (e) {
       console.log('Error fetching user:', e);
       return null;

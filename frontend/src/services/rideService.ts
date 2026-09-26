@@ -1,4 +1,5 @@
 import { supabase } from '@/src/lib/supabase';
+import { ensureUserProfile } from '@/src/services/userProfile';
 import { fetchOSRMRoute, Coordinates } from '@/src/lib/routing/osrm';
 import { haversineDistanceKm } from '@/src/lib/routing/routeGeometry';
 import { scoreRideMatch, parseTimeToMinutes } from '@/src/lib/routing/routeScoring';
@@ -75,6 +76,30 @@ function pointFromValue(value: unknown): { latitude: number; longitude: number }
   const longitude = Number(coordinates[0]);
   const latitude = Number(coordinates[1]);
   return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
+}
+
+/**
+ * Turns a raw PostgREST failure into something a rider can act on. Without this
+ * the UI only ever showed the HTTP status.
+ */
+function describeRideRequestError(message: string, code?: string): string {
+  const text = (message || '').toLowerCase();
+  if (text.includes('foreign key') || code === '23503') {
+    return 'Your rider profile could not be loaded, so the request was not sent. Please try again.';
+  }
+  if (text.includes('cannot request your own ride')) {
+    return 'You cannot request your own ride.';
+  }
+  if (text.includes('not accepting requests')) {
+    return 'This ride is no longer accepting requests.';
+  }
+  if (text.includes('already have')) {
+    return 'You have already sent a request for this ride.';
+  }
+  if (text.includes('ride not found')) {
+    return 'This ride is no longer available.';
+  }
+  return message || 'The ride request could not be sent.';
 }
 
 function displayTime(value: unknown): string | undefined {
@@ -350,11 +375,26 @@ export const rideService = {
   },
 
   async requestRide(rideId: string, requesterId: string): Promise<{ ok: boolean; status: 'pending' }> {
-    const { data, error } = await supabase.rpc('request_ride', {
+    let { data, error } = await supabase.rpc('request_ride', {
       p_ride_id: rideId,
       p_requester_id: requesterId,
     });
-    if (error) throw new Error(error.message);
+
+    // request_ride inserts a row whose requester_id is a foreign key onto
+    // user_profiles. A rider with no profile row gets a bare 409 from
+    // PostgREST with nothing actionable on screen, so create the row and retry
+    // once rather than leaving them unable to request a seat.
+    if (error) {
+      const healed = await ensureUserProfile({ userId: requesterId });
+      if (healed.ok) {
+        ({ data, error } = await supabase.rpc('request_ride', {
+          p_ride_id: rideId,
+          p_requester_id: requesterId,
+        }));
+      }
+    }
+
+    if (error) throw new Error(describeRideRequestError(error.message, error.code));
     const request = data as { status?: string } | null;
     return { ok: request?.status === 'pending', status: 'pending' };
   },
