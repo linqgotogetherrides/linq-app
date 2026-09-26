@@ -9,6 +9,10 @@ import type { Href } from 'expo-router';
 /**
  * Reachable without an account.
  *
+ * '/' is deliberately absent. It used to be the splash, which is now a loading
+ * state inside AuthGate rather than a route, so '/' is the tabs home and must
+ * be gated like any other screen.
+ *
  * `/sos/confirm` is here on purpose: it is the target of the lock-screen and
  * home-screen SOS tile, and it already handles a visitor with no account by
  * disabling activation, saying an account is needed, and offering a one-tap 112
@@ -17,8 +21,6 @@ import type { Href } from 'expo-router';
  * once a signed-in rider has activated one.
  */
 export const PUBLIC_ROUTES = new Set([
-  '/',
-  '/index',
   '/onboarding',
   '/login',
   '/otp',

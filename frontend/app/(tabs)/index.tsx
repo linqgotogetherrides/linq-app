@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import GuestPrompt from '@/src/components/GuestPrompt';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCurrentLocation } from '@/src/hooks/useCurrentLocation';
@@ -233,6 +234,21 @@ export default function Home() {
     showToast('Precise current location found. Confirm it on the map.');
     openLocationFlow('pickup', selected);
   };
+
+  // Home is the entry point for searching, finding a ride twin and reaching the
+  // referral game, so it must never render those to a rider with no account.
+  // AuthGate and the tab layout already redirect; this is the local guard.
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']} testID="home-guest">
+        <GuestPrompt
+          icon="car-sport-outline"
+          title="Sign up to find a ride"
+          subtitle="Create a free account to post a ride, search for a ride twin on your route, and chat once someone accepts."
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="home-screen">

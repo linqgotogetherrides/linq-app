@@ -1,9 +1,10 @@
 import React from 'react';
-import { Tabs, useRouter } from 'expo-router';
-import { StyleSheet, Pressable } from 'react-native';
+import { Tabs, useRouter, useSegments } from 'expo-router';
+import { StyleSheet, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, shadow } from '@/src/theme/tokens';
 import { useApp } from '@/src/context/AppContext';
+import { withNext } from '@/src/lib/authNavigation';
 
 function CenterTabButton() {
   const router = useRouter();
@@ -27,7 +28,24 @@ function CenterTabButton() {
 }
 
 export default function TabsLayout() {
-  // Allow guests to view tabs, but actions are restricted in components
+  const router = useRouter();
+  const { user, booting } = useApp();
+  const segments = useSegments();
+
+  // Second line of defence behind AuthGate. The whole tab group is one
+  // navigation surface, so a guest who reaches it by any route is turned away
+  // here rather than relying on each screen checking for itself.
+  React.useEffect(() => {
+    if (booting || user) return;
+    const current = `/${segments.join('/')}`;
+    router.replace(withNext('/onboarding', current));
+  }, [booting, user, segments, router]);
+
+  if (!booting && !user) {
+    // Render nothing so no signed-in affordance is visible for a frame.
+    return <View testID="tabs-guest-redirecting" style={{ flex: 1, backgroundColor: colors.background }} />;
+  }
+
   return (
     <Tabs
       screenOptions={{
