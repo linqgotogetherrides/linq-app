@@ -90,7 +90,12 @@ FIELDS = {
 
 
 def save_profile(user_id, fields):
-    """Mirrors saveProfile() in src/services/userProfile.ts."""
+    """Mirrors saveProfile() in src/services/userProfile.ts.
+
+    `fields` is what the caller passes in, including the id key it forgot to
+    strip. The service drops it on the update path, so this reproduces the
+    exact shape account-creation sends rather than a tidied-up one.
+    """
     exists = requests.get(
         table(), headers=headers(), params={"id": f"eq.{user_id}", "select": "id"}, timeout=40
     ).json()
@@ -99,8 +104,10 @@ def save_profile(user_id, fields):
             table(), headers=headers(), json={"id": user_id, **fields}, timeout=40
         )
     else:
+        # saveProfile strips id from the payload before the PATCH.
+        payload = {k: v for k, v in fields.items() if k != "id"}
         r = requests.patch(
-            table(), headers=headers(), json=fields, params={"id": f"eq.{user_id}"}, timeout=40
+            table(), headers=headers(), json=payload, params={"id": f"eq.{user_id}"}, timeout=40
         )
     return r
 
@@ -149,7 +156,17 @@ try:
     check("only one row was ever created",
           sql_value(f"select count(*)::text as c from public.user_profiles where id='{UID}';") == "1")
 
-    print("\n=== 5. the id is still not client-writable ===")
+    print("\n=== 5. a caller that forgets to strip id still succeeds ===")
+    # This is the shape that produced the 401 in the app: the destructuring in
+    # account-creation named `profileId` while the field is `id`, so nothing was
+    # stripped and the PATCH tried to write the primary key.
+    r = save_profile(UID, {"id": UID, **FIELDS, "name": "Unstripped Id"})
+    check("update succeeds even with id left in the payload",
+          r.status_code in (200, 204), f"{r.status_code} {r.text[:200]}")
+    check("and the write landed",
+          sql_value(f"select name as n from public.user_profiles where id='{UID}';") == "Unstripped Id")
+
+    print("\n=== 6. the id is still not client-writable ===")
     r = requests.patch(
         table(), headers=headers(), json={"id": "someone-else"}, params={"id": f"eq.{UID}"}, timeout=40
     )

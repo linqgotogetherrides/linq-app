@@ -79,10 +79,12 @@ export async function saveProfile(params: {
     return error ? { ok: false, error: error.message } : { ok: true };
   }
 
-  // `id` is the conflict key and is never in the SET list here.
+  // `id` must never reach the SET clause. The caller strips it, but a stray key
+  // here is a silent 401 for the rider, so drop it defensively too.
+  const { id: _ignored, ...writable } = params.fields as { id?: unknown };
   const { error } = await supabase
     .from('user_profiles')
-    .update(params.fields)
+    .update(writable)
     .eq('id', params.userId);
   return error ? { ok: false, error: error.message } : { ok: true };
 }

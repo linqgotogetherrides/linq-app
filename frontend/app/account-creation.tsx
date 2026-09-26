@@ -175,7 +175,9 @@ export default function AccountCreation() {
 
       // Not upsert(): see saveProfile for why PostgREST's ON CONFLICT clause
       // trips the column-level UPDATE grant.
-      const { profileId: _ignored, ...writable } = profileData;
+      // Strip the primary key: it must never appear in an UPDATE, which is the
+      // whole reason saveProfile exists. The key here is `id`, not `profileId`.
+      const { id: _ignoredId, ...writable } = profileData;
       const saved = await saveProfile({ userId: targetUid, fields: writable });
       if (!saved.ok) {
         // Do not claim success on a failed write. A rider left without a
