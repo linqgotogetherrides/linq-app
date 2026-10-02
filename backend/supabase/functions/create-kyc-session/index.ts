@@ -9,6 +9,27 @@ const CASHFREE_BASE_URL = isProd
   ? "https://api.cashfree.com/verification"
   : "https://sandbox.cashfree.com/verification";
 
+/** Encrypts `clientId.unixTimestamp` with RSA-OAEP/SHA-1 + the Cashfree public key. */
+async function generateCfSignature(clientId: string): Promise<string> {
+  const pem = (Deno.env.get("CASHFREE_PUBLIC_KEY") ?? "").replace(/\\n/g, "\n");
+  if (!pem) throw new Error("CASHFREE_PUBLIC_KEY secret is not set");
+  const b64 = pem
+    .replace(/-----BEGIN PUBLIC KEY-----/g, "")
+    .replace(/-----END PUBLIC KEY-----/g, "")
+    .replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    "spki",
+    der,
+    { name: "RSA-OAEP", hash: "SHA-1" },
+    false,
+    ["encrypt"],
+  );
+  const data = new TextEncoder().encode(`${clientId}.${Math.floor(Date.now() / 1000)}`);
+  const encrypted = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, key, data);
+  return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", {
@@ -29,49 +50,89 @@ serve(async (req) => {
         headers: { "Access-Control-Allow-Origin": "*" },
       });
     }
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: authHeader } } },
-    );
 
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) throw new Error("Unauthorized");
-
-    await req.json();
+    // Users sign in with Firebase phone OTP or Supabase Google OAuth, so there
+    // is no Supabase session to validate for phone users. Identity is the uid
+    // the app already uses client-side; the webhook later marks verification
+    // via the service role.
+    const body = await req.json().catch(() => ({}));
+    const userId: string | undefined = body?.userId;
+    const type: string = (body?.type ?? "aadhaar").toLowerCase();
+    if (!userId) throw new Error("Missing userId");
+    if (!["aadhaar", "pan", "dl"].includes(type)) throw new Error("Invalid document type");
 
     // Call Cashfree to generate a verification session
     // NOTE: This is a pseudo-implementation based on standard Cashfree Verification APIs
     // The exact endpoint depends on whether you are doing offline aadhaar, PAN API, etc.
     // For a unified UI flow, Cashfree provides Identity Verification links
 
-    const verificationId = `verify_${user.id}_${Date.now()}`;
+    // Cashfree caps verification_id at 50 chars; compress the parts.
+    const typeAbbr: Record<string, string> = { aadhaar: "a", pan: "p", dl: "d" };
+    const verificationId = `v_${userId}_${typeAbbr[type]}_${Math.floor(Date.now() / 1000)}`;
 
-    const response = await fetch(`${CASHFREE_BASE_URL}/verification-session`, {
+    // 2FA: sign "clientId.unixTimestamp" with RSA-OAEP-SHA1 using the Cashfree
+    // public key, exactly like their docs describe. Avoids IP whitelisting,
+    // which is unworkable since Supabase edge egress IPs rotate.
+    const signature = await generateCfSignature(CASHFREE_APP_ID);
+
+    // Cashfree KYC Link API: POST /verification/form. Needs the rider's name
+    // and phone, so pull them from their profile row with the service role.
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    );
+    const { data: profile } = await supabaseAdmin
+      .from("user_profiles")
+      .select("name, phone_number, email")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const phone = (profile?.phone_number ?? "").replace(/\D/g, "").slice(-10);
+    if (!phone) throw new Error("No phone number on profile. Add one before verifying.");
+
+    // Template names come from the Cashfree dashboard. Defaults match the
+    // standard templates; override via secrets if your dashboard differs.
+    const TEMPLATES: Record<string, string> = {
+      aadhaar: Deno.env.get("CASHFREE_TEMPLATE_AADHAAR") ?? "Aadhaar_verification",
+      pan: Deno.env.get("CASHFREE_TEMPLATE_PAN") ?? "PAN_verification",
+      dl: Deno.env.get("CASHFREE_TEMPLATE_DL") ?? "Driving_License_verification",
+    };
+
+    const linkExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    const response = await fetch(`${CASHFREE_BASE_URL}/form`, {
       method: "POST",
       headers: {
         "x-client-id": CASHFREE_APP_ID,
         "x-client-secret": CASHFREE_SECRET_KEY,
+        "x-cf-signature": signature,
+        "x-api-version": "2023-12-18",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        verification_id: verificationId,
-        return_url: "linq://verification-success",
-        notify_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/kyc-webhook`,
+        name: profile?.name || "LinQ User",
+        phone,
+        email: profile?.email || undefined,
+        template_name: TEMPLATES[type],
+        verification_id: verificationId.slice(0, 50),
+        link_expiry: linkExpiry,
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`Cashfree API error: ${response.status}`);
+      const errText = await response.text();
+      throw new Error(`Cashfree API error: ${response.status} ${errText.slice(0, 200)}`);
     }
     const data = await response.json();
-    if (!data.verification_url) {
+    if (!data.form_link) {
       throw new Error("Cashfree did not return a verification URL");
     }
 
     return new Response(
       JSON.stringify({
-        verificationUrl: data.verification_url,
+        verificationUrl: data.form_link,
         verificationId,
       }),
       {

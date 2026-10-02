@@ -46,11 +46,14 @@ const VERIFICATION_OPTIONS: {
 export default function AccountCreation() {
   const router = useRouter();
   // `uid` is deliberately ignored: a URL param cannot prove a phone number.
-  const { phone, next } = useLocalSearchParams<{ phone?: string; next?: string }>();
+  const { phone, next, email: oauthEmail, name: oauthName } = useLocalSearchParams<{ phone?: string; next?: string; email?: string; name?: string }>();
+  // Google/Apple signups arrive without a verified phone (no OTP step), so ask
+  // for one during account creation. Phone-OTP signups already carry `phone`.
+  const needsPhone = !phone;
   const { fetchUserProfile, otpVerifiedUid, setOtpVerifiedUid, setUser, showToast } = useApp();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(oauthName || '');
   const [age, setAge] = useState('');
   const [gender, setGender] = useState<'female' | 'male' | 'other' | ''>('female');
   const [womenOnly, setWomenOnly] = useState(false);
@@ -58,6 +61,7 @@ export default function AccountCreation() {
   const [bio, setBio] = useState('');
 
   // Emergency Contact & Photo
+  const [contactPhone, setContactPhone] = useState('');
   const [emergency, setEmergency] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [photoAdded, setPhotoAdded] = useState(false);
@@ -69,7 +73,7 @@ export default function AccountCreation() {
 
   const isStep1Valid = name.trim().length > 1;
   const isStep2Valid = Number(age) > 0 && Number(age) < 100;
-  const isStep4Valid = emergency.length >= 10;
+  const isStep4Valid = emergency.length >= 10 && (!needsPhone || contactPhone.length === 10);
   const canFinalize = isStep1Valid && isStep2Valid;
 
   const handleUploadPhoto = async () => {
@@ -114,7 +118,7 @@ export default function AccountCreation() {
       setStep(4);
     } else if (step === 4) {
       if (!isStep4Valid) {
-        showToast('Please enter a valid 10-digit emergency contact');
+        showToast(needsPhone ? 'Please enter your phone number and a valid 10-digit emergency contact' : 'Please enter a valid 10-digit emergency contact');
         return;
       }
       setStep(5);
@@ -143,7 +147,7 @@ export default function AccountCreation() {
     try {
       setLoading(true);
       const profileAge = Number(age);
-      const normalizedPhone = normalizePhone(phone);
+      const normalizedPhone = needsPhone ? contactPhone.replace(/\D/g, '') : normalizePhone(phone);
       const localProfile: User = {
         id: targetUid,
         name: name.trim(),
@@ -152,6 +156,7 @@ export default function AccountCreation() {
         womenOnlyMode: gender === 'female' ? womenOnly : false,
         bio: bio.trim() || undefined,
         phone: normalizedPhone || undefined,
+        email: oauthEmail || undefined,
         emergencyContact: emergency.trim() || undefined,
         avatarUrl: avatarUrl || undefined,
         verification: 'pending',
@@ -168,6 +173,7 @@ export default function AccountCreation() {
         women_only_mode: gender === 'female' ? womenOnly : false,
         bio: bio.trim(),
         emergency_contact: emergency.trim(),
+        email: oauthEmail || null,
         verification_status: 'pending',
         verification_document: verificationDoc,
         avatar_url: avatarUrl || null,
@@ -445,6 +451,32 @@ export default function AccountCreation() {
               </Text>
 
               <View style={styles.card}>
+                {needsPhone && (
+                  <>
+                    <Text style={styles.inputLabel}>
+                      <Ionicons name="call" size={14} color={colors.primary} /> Phone Number
+                    </Text>
+                    <View style={styles.inputRow}>
+                      <View style={styles.cc}>
+                        <Text>🇮🇳</Text>
+                        <Text style={styles.ccText}>+91</Text>
+                      </View>
+                      <TextInput
+                        testID="contact-phone-input"
+                        value={contactPhone}
+                        onChangeText={setContactPhone}
+                        placeholder="Enter your 10-digit phone number"
+                        placeholderTextColor={colors.textTertiary}
+                        keyboardType="phone-pad"
+                        maxLength={10}
+                        style={styles.textInput}
+                      />
+                    </View>
+                    <Text style={[styles.helper, { marginBottom: spacing.lg }]}>
+                      We use this to reach you about your rides. No OTP required.
+                    </Text>
+                  </>
+                )}
                 <Text style={styles.inputLabel}>
                   <Ionicons name="call" size={14} color={colors.error} /> Emergency Contact
                 </Text>

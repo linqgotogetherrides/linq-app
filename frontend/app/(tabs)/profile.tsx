@@ -7,6 +7,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useWallet } from '@/src/context/WalletContext';
 import { signOut } from '@/src/lib/auth';
+import { signOutOAuth } from '@/src/lib/oauth';
 import { clearSession } from '@/src/services/session';
 import GuestPrompt from '@/src/components/GuestPrompt';
 import NotificationButton from '@/src/components/NotificationButton';
@@ -78,6 +79,7 @@ export default function Profile() {
   const handleLogout = async () => {
     try {
       await signOut();
+      await signOutOAuth();
     } catch (e) {
       console.log('Firebase signout error:', e);
     }

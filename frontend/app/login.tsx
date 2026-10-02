@@ -3,9 +3,12 @@ import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Pla
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { sanitizeNext, withNext } from '@/src/lib/authNavigation';
+import { sanitizeNext, withNext, destinationAfterAuth } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import { signInWithPhoneNumber } from '../src/lib/auth';
+import { signInWithProvider } from '../src/lib/oauth';
+import { saveProfile, userProfileExists } from '../src/services/userProfile';
+import { saveSession } from '../src/services/session';
 import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import PrimaryButton from '@/src/components/PrimaryButton';
@@ -16,7 +19,7 @@ export default function Login() {
   // The page the gate turned away from, carried through the whole flow.
   const { next } = useLocalSearchParams<{ next?: string }>();
   const safeNext = sanitizeNext(next);
-  const { setConfirmResult, showToast } = useApp();
+  const { setConfirmResult, showToast, fetchUserProfile, setOtpVerifiedUid } = useApp();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const valid = phone.replace(/\D/g, '').length >= 10;
@@ -33,6 +36,42 @@ export default function Login() {
       router.push({ pathname: '/otp', params: { phone: fullPhone, ...(safeNext ? { next: safeNext } : {}) } });
     } catch (e: any) {
       showToast(e.message || 'Error sending OTP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOAuth = async (provider: 'google' | 'apple') => {
+    try {
+      setLoading(true);
+      const user = await signInWithProvider(provider);
+      if (!user) return; // Rider cancelled the browser.
+      // account-creation trusts this uid instead of a URL param.
+      setOtpVerifiedUid(user.id);
+      const isReturningRider = await userProfileExists(user.id);
+      if (isReturningRider) {
+        await saveSession(user.id);
+        // Backfill the email for Google users whose profile predates email capture.
+        if (user.email) {
+          await saveProfile({ userId: user.id, fields: { email: user.email } });
+        }
+        await fetchUserProfile(user.id);
+        showToast('Welcome back!');
+        router.replace(destinationAfterAuth(next));
+      } else {
+        router.push({
+          pathname: '/account-creation',
+          params: {
+            ...(safeNext ? { next: safeNext } : {}),
+            ...(user.email ? { email: user.email } : {}),
+            ...(user.user_metadata?.full_name || user.user_metadata?.name
+              ? { name: user.user_metadata.full_name || user.user_metadata.name }
+              : {}),
+          },
+        });
+      }
+    } catch (e: any) {
+      showToast(e.message || `Could not sign in with ${provider === 'google' ? 'Google' : 'Apple'}`);
     } finally {
       setLoading(false);
     }
@@ -89,14 +128,12 @@ export default function Login() {
 
             <View style={{ height: spacing.lg }} />
 
-            <Pressable style={styles.socialBtn} testID="continue-google" onPress={() => router.push(withNext('/account-creation', next))}>
+            <Pressable style={styles.socialBtn} testID="continue-google" disabled={loading} onPress={() => handleOAuth('google')}>
               <Ionicons name="logo-google" size={18} color={colors.textPrimary} />
               <Text style={styles.socialText}>Continue with Google</Text>
             </Pressable>
-            <Pressable style={styles.socialBtn} testID="continue-apple" onPress={() => router.push(withNext('/account-creation', next))}>
-              <Ionicons name="logo-apple" size={18} color={colors.textPrimary} />
-              <Text style={styles.socialText}>Continue with Apple</Text>
-            </Pressable>
+            {/* Continue with Apple is temporarily hidden until the Apple Developer
+                Services ID / .p8 key is configured in Supabase. */}
 
             <Pressable onPress={() => router.replace('/support')} testID="signin-later">
               <Text style={styles.link}>Skip • Sign in later</Text>

@@ -17,9 +17,12 @@ serve(async (req) => {
     const verificationId = payload.data?.verification_id;
     const status = payload.data?.status; // 'SUCCESS' or 'FAILED'
 
-    if (verificationId && status === "SUCCESS") {
-      // The verificationId looks like 'verify_USERID_TIMESTAMP'
-      const userId = verificationId.split("_")[1];
+    if (verificationId && ["SUCCESS", "VERIFIED", "success", "verified"].includes(status)) {
+      // The verificationId looks like 'v_USERID_<a|p|d>_TIMESTAMP'
+      // (userIds from Firebase/Google auth contain no underscores).
+      const parts = verificationId.split("_");
+      const userId = parts[1];
+      const docType = parts[2] === "a" ? "aadhaar" : parts[2] === "p" ? "pan" : parts[2] === "d" ? "dl" : "";
 
       // Use the Service Role Key to bypass RLS and update the user's status
       const supabaseAdmin = createClient(
@@ -27,10 +30,14 @@ serve(async (req) => {
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       );
 
-      // Example: updating a "user_profiles" table to set kyc_verified to true
       await supabaseAdmin
         .from("user_profiles")
-        .update({ kyc_status: "verified", updated_at: new Date() })
+        .update({
+          kyc_status: "verified",
+          verification_status: "verified",
+          verification_document: ["aadhaar", "pan", "dl"].includes(docType) ? docType : undefined,
+          updated_at: new Date(),
+        })
         .eq("id", userId);
     }
 

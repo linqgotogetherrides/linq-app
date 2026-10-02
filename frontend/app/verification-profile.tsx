@@ -11,12 +11,24 @@ import { colors, spacing, font, radius } from '@/src/theme/tokens';
 type Status = 'verified' | 'pending' | 'not_verified';
 
 export default function VerificationProfile() {
-  const { showToast } = useApp();
+  const { showToast, user } = useApp();
   const [items, setItems] = useState<{ key: string; label: string; sub: string; icon: keyof typeof Ionicons.glyphMap; status: Status }[]>([
-    { key: 'aadhaar', label: 'Aadhaar Card', sub: 'Government ID verification', icon: 'id-card', status: 'verified' },
-    { key: 'pan', label: 'PAN Card', sub: 'Tax identity verification', icon: 'card', status: 'pending' },
+    { key: 'aadhaar', label: 'Aadhaar Card', sub: 'Government ID verification', icon: 'id-card', status: 'not_verified' },
+    { key: 'pan', label: 'PAN Card', sub: 'Tax identity verification', icon: 'card', status: 'not_verified' },
     { key: 'dl', label: 'Driving Licence', sub: 'Required to offer rides', icon: 'car-sport', status: 'not_verified' },
   ]);
+
+  // Reflect the rider's real saved state instead of hardcoded statuses.
+  React.useEffect(() => {
+    if (!user) return;
+    setItems((prev) =>
+      prev.map((i) =>
+        i.key === user.verificationDocument && user.verification
+          ? { ...i, status: user.verification as Status }
+          : i,
+      ),
+    );
+  }, [user]);
 
   const [webviewVisible, setWebviewVisible] = useState(false);
   const [kycUrl, setKycUrl] = useState('');
@@ -28,6 +40,10 @@ export default function VerificationProfile() {
         : { label: 'Not Verified', color: colors.textSecondary, bg: colors.surfaceSecondary };
 
   const handleVerify = async (key: string) => {
+    if (!user?.id) {
+      showToast('Please sign in to verify your ID');
+      return;
+    }
     setActiveKey(key);
     setWebviewVisible(true);
     setKycUrl('');
@@ -35,7 +51,7 @@ export default function VerificationProfile() {
     try {
       // Call Supabase Edge Function to generate the Cashfree link
       const { data, error } = await supabase.functions.invoke('create-kyc-session', {
-        body: { type: key.toUpperCase() },
+        body: { type: key, userId: user?.id },
       });
 
       if (error || !data?.verificationUrl) throw new Error(error?.message || 'Failed to generate session');
@@ -47,9 +63,15 @@ export default function VerificationProfile() {
     }
   };
 
-  const handleSuccess = () => {
+  const handleSuccess = async () => {
     setWebviewVisible(false);
     setItems((prev) => prev.map((i) => (i.key === activeKey && i.status === 'not_verified' ? { ...i, status: 'pending' } : i)));
+    if (user?.id) {
+      await supabase
+        .from('user_profiles')
+        .update({ verification_status: 'pending', verification_document: activeKey })
+        .eq('id', user.id);
+    }
     showToast('Verification submitted and is pending review');
   };
 
