@@ -1,0 +1,11 @@
+# Firebase Auth tooling — keep credentials out of git
+node_modules/
+
+# Never commit service-account / credential material
+*-service-account*.json
+serviceAccount*.json
+*firebase-adminsdk*.json
+*.key
+*.pem
+.env
+.env.*

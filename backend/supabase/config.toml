@@ -335,9 +335,19 @@ email_optional = false
 enabled = false
 
 # Use Firebase Auth as a third-party provider alongside Supabase Auth.
+#
+# LinQ authenticates with Firebase Phone OTP and keeps users keyed by Firebase
+# UID. Enabling this lets Supabase verify the Firebase ID token the app sends
+# (via the Supabase client's `accessToken` callback) and resolve it to
+# auth.uid() inside Edge Functions. No users are migrated to Supabase Auth.
+#
+# IMPORTANT: this file only configures a LOCAL/CLI-linked project. The hosted
+# project must have the same Firebase integration enabled in the Supabase
+# Dashboard (Authentication -> Sign In / Providers -> Third-Party Auth ->
+# Firebase) for production; editing config.toml alone does not change it.
 [auth.third_party.firebase]
-enabled = false
-# project_id = "my-firebase-project"
+enabled = true
+project_id = "linq-50ed1"
 
 # Use Auth0 as a third-party provider alongside Supabase Auth.
 [auth.third_party.auth0]

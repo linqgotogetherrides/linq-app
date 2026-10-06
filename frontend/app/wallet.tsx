@@ -45,11 +45,14 @@ export default function Wallet() {
                   return;
                 }
                 try {
-                  const { supabase } = await import('@/src/lib/supabase');
+                  const { supabaseFunctions } = await import('@/src/lib/supabase');
+                  // Only apikey here: the client's accessToken callback provides
+                  // the Authorization bearer (Firebase ID token). Overwriting it
+                  // with the anon key would prevent the function identifying us.
                   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-                  const { error } = await supabase.functions.invoke('wallet-credit', {
+                  const { error } = await supabaseFunctions.functions.invoke('wallet-credit', {
                     body: { user_id: user.id, razorpay_payment_id: paymentId },
-                    headers: { apikey: key, Authorization: `Bearer ${key}` },
+                    headers: { apikey: key },
                   });
                   if (error) throw error;
                   await refreshWallet();

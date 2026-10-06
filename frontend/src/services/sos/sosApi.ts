@@ -7,7 +7,7 @@
 // Every call sends the apikey and a matching Authorization bearer, which is the
 // same guard the existing Razorpay functions use.
 
-import { supabase } from '@/src/lib/supabase';
+import { supabaseFunctions } from '@/src/lib/supabase';
 import type {
   SosActivateResult,
   SosAdminDetail,
@@ -35,19 +35,21 @@ export class SosApiError extends Error {
   }
 }
 
-function authHeaders(): Record<string, string> {
+// The apikey identifies the project; the client's accessToken callback supplies
+// the Firebase ID token as the Authorization bearer. Setting Authorization here
+// would overwrite that token with the public anon key and defeat verification.
+function apikeyHeader(): Record<string, string> {
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
   return {
     apikey: key,
-    Authorization: `Bearer ${key}`,
     'Content-Type': 'application/json',
   };
 }
 
 async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke(fn, {
+  const { data, error } = await supabaseFunctions.functions.invoke(fn, {
     body,
-    headers: authHeaders(),
+    headers: apikeyHeader(),
   });
 
   if (error) {

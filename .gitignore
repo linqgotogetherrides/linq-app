@@ -88,3 +88,9 @@ credentials.json
 .credentials
 .emergent/
 .gitconfig
+
+# Firebase / Google service-account credentials — MUST never be committed
+*-service-account*.json
+serviceAccount*.json
+*firebase-adminsdk*.json
+**/application_default_credentials.json

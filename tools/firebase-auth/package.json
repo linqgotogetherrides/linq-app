@@ -1,0 +1,14 @@
+{
+  "name": "linq-firebase-auth-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One-off Firebase Auth admin tooling for LinQ. Not part of the mobile app.",
+  "type": "commonjs",
+  "scripts": {
+    "backfill:dry": "node set-authenticated-role.js --dry-run",
+    "backfill": "node set-authenticated-role.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0"
+  }
+}

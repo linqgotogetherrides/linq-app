@@ -1,4 +1,4 @@
-import { supabase } from '@/src/lib/supabase';
+import { supabaseFunctions } from '@/src/lib/supabase';
 
 export type DeleteAccountResult =
   | { ok: true }
@@ -16,10 +16,13 @@ export async function deleteAccount(userId: string): Promise<DeleteAccountResult
   if (!userId) return { ok: false, message: 'You are not signed in.' };
 
   try {
+    // Only the apikey is set explicitly; the Authorization bearer is supplied by
+    // the Supabase client's accessToken callback (a Firebase ID token). Setting
+    // Authorization to the anon key here would overwrite that token.
     const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-    const { data, error } = await supabase.functions.invoke('account-deletion', {
+    const { data, error } = await supabaseFunctions.functions.invoke('account-deletion', {
       body: { user_id: userId },
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      headers: { apikey: key },
     });
     if (error) throw error;
 

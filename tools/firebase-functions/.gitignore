@@ -1,0 +1,15 @@
+# Firebase Functions tooling — keep credentials and build output out of git
+node_modules/
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+*.log
+
+# Never commit service-account / credential material
+*-service-account*.json
+serviceAccount*.json
+*firebase-adminsdk*.json
+*.key
+*.pem
+.env
+.env.*
