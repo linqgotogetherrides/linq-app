@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
 import PrimaryButton from '@/src/components/PrimaryButton';
-import { useApp } from '@/src/context/AppContext';
-import { mockRewards } from '@/src/mock/data';
+import { useWallet } from '@/src/context/WalletContext';
+import { describeWalletTxn, formatTxnDate } from '@/src/lib/walletTxnDisplay';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 export default function Rewards() {
   const router = useRouter();
-  const { rewardBalance } = useApp();
+  const { rewardBalance, transactions } = useWallet();
+
+  // The reward history is the reward-kind slice of the real wallet ledger, so
+  // it can never show a reward the wallet did not actually receive.
+  const rewardHistory = useMemo(
+    () =>
+      transactions.filter(
+        (txn) => txn.kind === 'referral_reward' || txn.kind === 'ride_credit',
+      ),
+    [transactions],
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="rewards-screen">
@@ -41,18 +51,30 @@ export default function Rewards() {
 
         <Text style={styles.sectionTitle}>Reward History</Text>
         <View style={styles.card}>
-          {mockRewards.map((r, i) => (
-            <View key={r.id} style={[styles.row, i < mockRewards.length - 1 && styles.rowBorder]}>
-              <View style={[styles.rowIcon, { backgroundColor: r.type === 'referral' ? colors.successLight : colors.warningLight }]}>
-                <Ionicons name={r.type === 'referral' ? 'share-social' : 'checkmark-done'} size={18} color={r.type === 'referral' ? colors.success : colors.warning} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowTitle}>{r.title}</Text>
-                <Text style={styles.rowDate}>{r.date}</Text>
-              </View>
-              <Text style={[styles.rowAmount, { color: colors.success }]}>+₹{r.amount}</Text>
+          {rewardHistory.length === 0 ? (
+            <View style={styles.empty}>
+              <Ionicons name="gift-outline" size={22} color={colors.textTertiary} />
+              <Text style={styles.emptyText}>
+                No rewards yet. Refer a friend to earn your first ₹5.
+              </Text>
             </View>
-          ))}
+          ) : (
+            rewardHistory.map((r, i) => {
+              const display = describeWalletTxn(r);
+              return (
+                <View key={r.id} style={[styles.row, i < rewardHistory.length - 1 && styles.rowBorder]}>
+                  <View style={[styles.rowIcon, { backgroundColor: display.background }]}>
+                    <Ionicons name={display.icon} size={18} color={display.tint} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{r.note || display.title}</Text>
+                    <Text style={styles.rowDate}>{formatTxnDate(r.created_at)}</Text>
+                  </View>
+                  <Text style={[styles.rowAmount, { color: colors.success }]}>+₹{Math.abs(r.amount)}</Text>
+                </View>
+              );
+            })
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -72,6 +94,8 @@ const styles = StyleSheet.create({
   earnLabel: { fontSize: font.size.xs, color: colors.textTertiary },
   sectionTitle: { fontSize: font.size.lg, color: colors.textPrimary, fontWeight: font.weight.medium, marginTop: spacing.xl, marginBottom: spacing.md },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  empty: { alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.lg, paddingHorizontal: spacing.md },
+  emptyText: { fontSize: font.size.sm, color: colors.textTertiary, textAlign: 'center', lineHeight: 18 },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.divider },
   rowIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

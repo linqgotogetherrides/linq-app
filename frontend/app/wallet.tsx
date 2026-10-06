@@ -7,13 +7,14 @@ import LinqHeader from '@/src/components/LinqHeader';
 import RazorpayCheckoutButton from '@/src/components/RazorpayCheckoutButton';
 import { useApp } from '@/src/context/AppContext';
 import { useWallet } from '@/src/context/WalletContext';
-import { mockTransactions } from '@/src/mock/data';
+import { describeWalletTxn, formatTxnDate } from '@/src/lib/walletTxnDisplay';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 export default function Wallet() {
   const router = useRouter();
-  const { rewardBalance, showToast, user } = useApp();
-  const { balance, refresh: refreshWallet } = useWallet();
+  const { showToast, user } = useApp();
+  const { balance, rewardBalance, transactions, refresh: refreshWallet } = useWallet();
+  const recentTransactions = transactions.slice(0, 4);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="wallet-screen">
@@ -88,18 +89,28 @@ export default function Wallet() {
         </View>
 
         <View style={styles.txCard}>
-          {mockTransactions.slice(0, 4).map((t, i) => (
-            <View key={t.id} style={[styles.txRow, i < 3 && styles.txBorder]}>
-              <View style={[styles.txIcon, { backgroundColor: t.type === 'debit' ? colors.errorLight : colors.successLight }]}>
-                <Ionicons name={t.type === 'debit' ? 'arrow-up' : t.type === 'reward' ? 'gift' : 'arrow-down'} size={16} color={t.type === 'debit' ? colors.error : colors.success} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.txName}>{t.title}</Text>
-                <Text style={styles.txDate}>{t.date}</Text>
-              </View>
-              <Text style={[styles.txAmount, { color: t.amount < 0 ? colors.error : colors.success }]}>{t.amount < 0 ? '-' : '+'}₹{Math.abs(t.amount)}</Text>
+          {recentTransactions.length === 0 ? (
+            <View style={styles.txEmpty}>
+              <Ionicons name="receipt-outline" size={20} color={colors.textTertiary} />
+              <Text style={styles.txEmptyText}>No transactions yet</Text>
             </View>
-          ))}
+          ) : (
+            recentTransactions.map((t, i) => {
+              const display = describeWalletTxn(t);
+              return (
+                <View key={t.id} style={[styles.txRow, i < recentTransactions.length - 1 && styles.txBorder]}>
+                  <View style={[styles.txIcon, { backgroundColor: display.background }]}>
+                    <Ionicons name={display.icon} size={16} color={display.tint} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.txName}>{display.title}</Text>
+                    <Text style={styles.txDate}>{formatTxnDate(t.created_at)}</Text>
+                  </View>
+                  <Text style={[styles.txAmount, { color: t.amount < 0 ? colors.error : colors.success }]}>{t.amount < 0 ? '-' : '+'}₹{Math.abs(t.amount)}</Text>
+                </View>
+              );
+            })
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -140,6 +151,8 @@ const styles = StyleSheet.create({
   txTitle: { fontSize: font.size.lg, color: colors.textPrimary, fontWeight: font.weight.medium },
   seeAll: { fontSize: font.size.sm, color: colors.primary, fontWeight: font.weight.medium },
   txCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  txEmpty: { alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.lg },
+  txEmptyText: { fontSize: font.size.sm, color: colors.textTertiary },
   txRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
   txBorder: { borderBottomWidth: 1, borderBottomColor: colors.divider },
   txIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },

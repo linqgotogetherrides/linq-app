@@ -5,8 +5,7 @@ import { fetchOSRMRoute, Coordinates } from '@/src/lib/routing/osrm';
 import { haversineDistanceKm } from '@/src/lib/routing/routeGeometry';
 import { scoreRideMatch, parseTimeToMinutes } from '@/src/lib/routing/routeScoring';
 import { LocationCoordinates } from '@/src/services/locationService';
-import { mockRides } from '@/src/mock/data';
-import { Ride, RideStatus, RideType, User, VehicleKind } from '@/src/types';
+import { Ride, RideHistoryEntry, RideStatus, RideType, User, VehicleKind } from '@/src/types';
 
 type DbRow = Record<string, unknown>;
 
@@ -216,9 +215,15 @@ function getCoordsForRidePlace(place: {
   return null;
 }
 
-function mergeRides(primary: Ride[], fallback: Ride[]): Ride[] {
+/**
+ * Rides created in this session live in `createdRides` until the next fetch
+ * returns them from the database, so they are merged in to avoid the rider's
+ * own fresh post briefly disappearing from their list. Anything already
+ * returned by the query wins, so a ride is never listed twice.
+ */
+function mergeRides(primary: Ride[], extra: Ride[]): Ride[] {
   const seen = new Set(primary.map((ride) => ride.id));
-  return [...primary, ...fallback.filter((ride) => !seen.has(ride.id))];
+  return [...primary, ...extra.filter((ride) => !seen.has(ride.id))];
 }
 
 async function loadDbRides(includeAllStatuses = false): Promise<Ride[]> {
@@ -264,7 +269,7 @@ function toNullableDate(value?: string | null): string | null {
 export const rideService = {
   async getRides(query: SearchQuery = {}): Promise<Ride[]> {
     const databaseRides = await loadDbRides(false);
-    let rides = mergeRides(databaseRides, [...createdRides, ...mockRides]);
+    let rides = mergeRides(databaseRides, createdRides);
 
     if (query.excludeUserId) {
       const selfId = query.excludeUserId;
@@ -362,7 +367,7 @@ export const rideService = {
   },
 
   async getRideById(id: string): Promise<Ride | undefined> {
-    const local = [...createdRides, ...mockRides].find((ride) => ride.id === id);
+    const local = createdRides.find((ride) => ride.id === id);
     if (local) return local;
 
     const { data, error } = await supabase
@@ -492,6 +497,77 @@ export const rideService = {
       databaseRides.filter((ride) => ride.creator.id === userId),
       createdRides.filter((ride) => ride.creator.id === userId)
     );
+  },
+
+  /**
+   * Every ride that has already finished from this rider's point of view, as
+   * either the driver or a passenger. Only terminal rows are returned, so the
+   * history never duplicates a ride that is still active on the Rides tab.
+   */
+  async getRideHistory(userId?: string): Promise<RideHistoryEntry[]> {
+    if (!userId) return [];
+
+    const [ownedRes, requestedRes] = await Promise.all([
+      supabase
+        .from('rides')
+        .select('*, creator:user_profiles!rides_user_id_fkey(*)')
+        .eq('user_id', userId)
+        .in('status', ['completed', 'cancelled'])
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('ride_requests')
+        .select(
+          'id, status, responded_at, created_at, ride:rides!ride_requests_ride_id_fkey(*, creator:user_profiles!rides_user_id_fkey(*))'
+        )
+        .eq('requester_id', userId)
+        .in('status', ['accepted', 'declined', 'cancelled'])
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ]);
+
+    if (ownedRes.error) console.warn('Supabase ride history (owned) failed:', ownedRes.error.message);
+    if (requestedRes.error) console.warn('Supabase ride history (requested) failed:', requestedRes.error.message);
+
+    const entries: RideHistoryEntry[] = [];
+
+    for (const row of (ownedRes.data ?? []) as DbRow[]) {
+      const ride = mapRideRow(row);
+      entries.push({
+        id: `driver-${ride.id}`,
+        ride,
+        role: 'driver',
+        outcome: ride.status === 'completed' ? 'completed' : 'cancelled',
+        at: asString(row.updated_at) || asString(row.created_at),
+      });
+    }
+
+    for (const row of (requestedRes.data ?? []) as DbRow[]) {
+      const rideRow = asObject(row.ride);
+      // A request with no readable ride row carries no history.
+      if (!rideRow) continue;
+      const requestStatus = asString(row.status);
+      const ride = mapRideRow(rideRow);
+      let outcome: RideHistoryEntry['outcome'];
+      if (requestStatus === 'declined') {
+        outcome = 'declined';
+      } else if (requestStatus === 'accepted' && (ride.status === 'completed' || ride.status === 'cancelled')) {
+        outcome = ride.status;
+      } else {
+        // Accepted but the ride is still live, or a cancelled pending request:
+        // not history yet.
+        continue;
+      }
+      entries.push({
+        id: `passenger-${asString(row.id)}`,
+        ride,
+        role: 'passenger',
+        outcome,
+        at: asString(row.responded_at) || asString(row.created_at),
+      });
+    }
+
+    return entries.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
   },
 
   /**

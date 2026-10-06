@@ -4,16 +4,49 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
+import ConfirmDialog from '@/src/components/ConfirmDialog';
 import { useApp } from '@/src/context/AppContext';
+import { deleteAccount } from '@/src/services/accountDeletion';
+import { signOut } from '@/src/lib/auth';
+import { signOutOAuth } from '@/src/lib/oauth';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
 export default function Settings() {
   const router = useRouter();
-  const { showToast } = useApp();
+  const { showToast, user, setUser, setIsAuthed } = useApp();
   const [push, setPush] = useState(true);
   const [email, setEmail] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [sound, setSound] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    if (!user?.id) {
+      showToast('Sign in to delete your account.');
+      return;
+    }
+    setDeleting(true);
+    const result = await deleteAccount(user.id);
+    setDeleting(false);
+    setConfirmDelete(false);
+    if (!result.ok) {
+      showToast(result.message);
+      return;
+    }
+    // The server row is gone; clear the provider sessions and local identity so
+    // the app cannot re-enter the deleted account.
+    try {
+      await signOut();
+      await signOutOAuth();
+    } catch (e) {
+      console.log('Sign-out during deletion failed:', e);
+    }
+    setUser(null);
+    setIsAuthed(false);
+    showToast('Your account has been deleted.');
+    router.replace('/onboarding');
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="settings-screen">
@@ -37,11 +70,30 @@ export default function Settings() {
           <LinkRow icon="information-circle-outline" label="About LinQ" sub="v1.0.0" onPress={() => showToast('LinQ Rides v1.0.0')} last />
         </View>
 
-        <Pressable style={styles.deleteBtn} testID="delete-account" onPress={() => showToast('Account deletion requested')}>
+        <Pressable
+          style={[styles.deleteBtn, deleting && styles.deleteBtnBusy]}
+          testID="delete-account"
+          disabled={deleting}
+          onPress={() => setConfirmDelete(true)}
+        >
           <Ionicons name="trash-outline" size={18} color={colors.error} />
-          <Text style={styles.deleteText}>Delete Account</Text>
+          <Text style={styles.deleteText}>{deleting ? 'Deleting…' : 'Delete Account'}</Text>
         </Pressable>
+        <Text style={styles.deleteHint}>
+          Permanently removes your profile, rides, wallet history and safety data.
+        </Text>
       </ScrollView>
+
+      <ConfirmDialog
+        visible={confirmDelete}
+        title="Delete your account?"
+        message="This permanently deletes your LinQ account and all of your data, including rides, wallet history and SOS evidence. This cannot be undone."
+        cancelLabel="Keep my account"
+        confirmLabel="Delete forever"
+        busy={deleting}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void handleDeleteAccount()}
+      />
     </SafeAreaView>
   );
 }
@@ -79,5 +131,7 @@ const styles = StyleSheet.create({
   label: { flex: 1, fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium },
   sub: { fontSize: font.size.sm, color: colors.textSecondary, marginTop: 2 },
   deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, height: 52, borderRadius: radius.pill, backgroundColor: colors.errorLight, marginTop: spacing.md },
+  deleteBtnBusy: { opacity: 0.6 },
   deleteText: { color: colors.error, fontSize: font.size.base, fontWeight: font.weight.medium },
+  deleteHint: { color: colors.textTertiary, fontSize: font.size.xs, textAlign: 'center', marginTop: spacing.sm, paddingHorizontal: spacing.md, lineHeight: 16 },
 });

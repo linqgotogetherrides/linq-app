@@ -77,6 +77,25 @@ export function speedFor(progress: number): number {
   return baseSpeed + (maxSpeed - baseSpeed) * eased;
 }
 
+/**
+ * Distance between obstacle rows at a given progress point, in world units.
+ *
+ * Starts at `spawnInterval` and tightens toward `MIN_ROW_GAP` as the run goes
+ * on. Because speed also rises, the time between rows shrinks faster than the
+ * distance does: obstacles visibly come at the player more often the further
+ * they travel. The gap never drops below `MIN_ROW_GAP`, so there is always room
+ * to read the road and reach the open lane.
+ */
+export const MIN_ROW_GAP = 205;
+export function spawnGapFor(progress: number): number {
+  const clamped = Math.max(0, Math.min(1, progress));
+  const eased = clamped * clamped * 0.6 + clamped * 0.4;
+  return GAME_CONFIG.spawnInterval + (MIN_ROW_GAP - GAME_CONFIG.spawnInterval) * eased;
+}
+
+/** How long the "you got stuck" banner stays on screen after a collision. */
+export const STUCK_BANNER_MS = 1200;
+
 /** Air-pollution haze windows, as progress ranges. Slightly reduced visibility. */
 export const POLLUTION_ZONES: { from: number; to: number; peak: number }[] = [
   { from: 0.3, to: 0.42, peak: 0.45 },

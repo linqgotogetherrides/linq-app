@@ -46,6 +46,12 @@ export type ReferralStats = {
 
 type WalletContextValue = {
   balance: number;
+  /**
+   * The part of the wallet balance earned through the rewards programme
+   * (referrals and confirmed-ride credits), derived from the ledger so it can
+   * never drift from the transactions the rider sees.
+   */
+  rewardBalance: number;
   lifetimeEarned: number;
   lifetimeSpent: number;
   loading: boolean;
@@ -250,6 +256,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [inviteLink, referralCode],
   );
 
+  // Reward money is the sum of the reward-kind credits still in the wallet.
+  // Derived rather than stored so it always agrees with the transaction list.
+  const rewardBalance = useMemo(
+    () =>
+      transactions
+        .filter((txn) => txn.kind === 'referral_reward' || txn.kind === 'ride_credit')
+        .reduce((sum, txn) => sum + toNumber(txn.amount), 0),
+    [transactions],
+  );
+
   const stats = useMemo<ReferralStats>(
     () => ({
       code: referralCode ?? '',
@@ -266,6 +282,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<WalletContextValue>(
     () => ({
       balance,
+      rewardBalance,
       lifetimeEarned,
       lifetimeSpent,
       loading,
@@ -283,6 +300,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [
       applyReferralCode,
       balance,
+      rewardBalance,
       error,
       inviteLink,
       lifetimeEarned,

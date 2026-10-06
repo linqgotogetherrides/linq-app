@@ -11,7 +11,7 @@
 //   4. Moving traffic drifts by a bounded amount, so it cannot slide into the
 //      only open lane at the last moment.
 
-import { GAME_CONFIG, difficultyFor } from './constants';
+import { GAME_CONFIG, difficultyFor, spawnGapFor } from './constants';
 import type { EntityKind, Lane, RoadEntity } from './types';
 
 const LANES: Lane[] = [0, 1, 2];
@@ -198,7 +198,8 @@ export function spawnUntil(
       state.lastPassengerZ = state.nextRowZ;
     }
 
-    state.nextRowZ += GAME_CONFIG.spawnInterval;
+    // Tighten row spacing as progress grows; this is the frequency ramp.
+    state.nextRowZ += spawnGapFor(progress);
   }
 
   return produced;

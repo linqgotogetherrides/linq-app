@@ -43,10 +43,6 @@ interface AppContextValue {
   useChat: () => boolean;
   upgradePlan: (plan: 'yearly' | 'twoYear') => void;
   singleUnlock: () => void;
-  walletBalance: number;
-  rewardBalance: number;
-  addToWallet: (amount: number) => void;
-  spendReward: (amount: number) => void;
   toast: string | null;
   showToast: (m: string) => void;
   fetchUserProfile: (uid: string) => Promise<User | null>;
@@ -147,7 +143,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [confirmResult, setConfirmResult] = useState<any>(null);
   const [otpVerifiedUid, setOtpVerifiedUid] = useState<string | null>(null);
   const [access, setAccess] = useState<AccessState>(defaultAccess);
-  const [rewardBalance, setRewardBalance] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [locationFlowResult, setLocationFlowResult] = useState<LocationFlowResult | null>(null);
   const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
@@ -441,18 +436,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshRideActivity, rideRequests, showToast, user?.id]);
 
-  // The wallet is now owned by WalletContext (persisted in Supabase). These
-  // access limits stay in memory on purpose: they are per-device session limits.
-  const addToWallet = useCallback((_amount: number) => {
-    // Intentionally a no-op here. Balance mutations must go through
-    // WalletContext so they are persisted; use creditWallet() instead.
-  }, []);
-
-  const spendReward = useCallback((amount: number) => {
-    setRewardBalance((b) => Math.max(0, b - amount));
-  }, []);
-
-
+  // The wallet is owned by WalletContext, which persists every mutation in
+  // Supabase. AppContext deliberately keeps no balance of its own so there is
+  // a single source of truth for money.
 
   return (
     <AppContext.Provider
@@ -460,7 +446,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         user, setUser, isAuthed, setIsAuthed, booting,
         confirmResult, setConfirmResult, otpVerifiedUid, setOtpVerifiedUid,
         access, useRequest, useChat, upgradePlan, singleUnlock,
-        walletBalance: 0, rewardBalance, addToWallet, spendReward,
         toast, showToast, fetchUserProfile, refreshUser,
         saveUserLocation, locationFlowResult, setLocationFlowResult, clearLocationFlowResult,
         rideRequests, rideNotifications,

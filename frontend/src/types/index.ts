@@ -126,6 +126,18 @@ export interface RideRequest {
   createdAt: string;
 }
 
+export type RideHistoryOutcome = 'completed' | 'cancelled' | 'declined';
+
+/** A finished ride, seen from either side: posted by the rider or joined. */
+export interface RideHistoryEntry {
+  id: string;
+  ride: Ride;
+  role: 'driver' | 'passenger';
+  outcome: RideHistoryOutcome;
+  /** ISO timestamp of the terminal event, used to sort newest first. */
+  at?: string;
+}
+
 export interface Transaction {
   id: string;
   title: string;

@@ -22,7 +22,7 @@ import {
   useGame,
 } from '@/src/context/GameContext';
 import { useWallet } from '@/src/context/WalletContext';
-import { GAME_CONFIG } from '@/src/lib/game/constants';
+import { GAME_CONFIG, STUCK_BANNER_MS } from '@/src/lib/game/constants';
 import { PlayerCar } from '@/src/components/game/GameArt';
 import type { GameEvent, GameState } from '@/src/lib/game/types';
 import { colors, font, radius, shadow, spacing } from '@/src/theme/tokens';
@@ -47,6 +47,12 @@ export default function FillTheRide() {
   const [hud, setHud] = useState({ time: GAME_CONFIG.durationMs, seats: 0 });
   const [busy, setBusy] = useState(false);
   const [lastRun, setLastRun] = useState<{ won: boolean; seats: number; score: number } | null>(null);
+  /**
+   * Set when the car clips an obstacle. The run pauses so the player can read
+   * "You got stuck!" and choose to continue or restart — a collision slows the
+   * car, it never ends the run on its own.
+   */
+  const [stuck, setStuck] = useState(false);
   const startedAt = useRef(0);
   const controlRef = useRef<((delta: -1 | 1) => void) | null>(null);
 
@@ -70,6 +76,7 @@ export default function FillTheRide() {
     setSeed(Math.floor(Math.random() * 2 ** 31));
     setHud({ time: GAME_CONFIG.durationMs, seats: 0 });
     setLastRun(null);
+    setStuck(false);
     startedAt.current = Date.now();
     setPhase('playing');
   }, [game, router, user]);
@@ -86,6 +93,7 @@ export default function FillTheRide() {
 
       const durationMs = Date.now() - startedAt.current;
       const won = state.phase === 'won';
+      setStuck(false);
       setLastRun({ won, seats: state.seats, score: Math.round(state.score) });
 
       if (sessionId) {
@@ -107,6 +115,9 @@ export default function FillTheRide() {
     if (event.type === 'tick') return;
     if (event.type === 'pickup') {
       setHud((h) => ({ ...h, seats: event.seats }));
+    } else if (event.type === 'hit') {
+      // Pause the road so the player can look up from the collision.
+      setStuck(true);
     }
   }, []);
 
@@ -115,6 +126,16 @@ export default function FillTheRide() {
   const onTime = useCallback((remainingMs: number) => {
     setHud((h) => (Math.abs(h.time - remainingMs) > 100 ? { ...h, time: remainingMs } : h));
   }, []);
+
+  // The "got stuck" banner pauses the road, but a run cannot be paused
+  // indefinitely: the server rejects a session whose wall-clock time is wildly
+  // longer than the level. Auto-resume after the banner window so a frozen run
+  // can never be mistaken for a stalled or cheating one.
+  useEffect(() => {
+    if (!stuck) return;
+    const id = setTimeout(() => setStuck(false), STUCK_BANNER_MS);
+    return () => clearTimeout(id);
+  }, [stuck]);
 
   /**
    * Leave the game without bouncing the player back into it.
@@ -129,6 +150,11 @@ export default function FillTheRide() {
   // Swipe controls.
   const pan = useRef(
     PanResponder.create({
+      // Capture in the capture phase so a horizontal swipe always wins over the
+      // tap-to-switch zones layered on the road. A tap (no movement past the
+      // threshold) still falls through to the Pressable underneath.
+      onMoveShouldSetPanResponderCapture: (_e, g) =>
+        Math.abs(g.dx) > SWIPE_THRESHOLD && Math.abs(g.dx) > Math.abs(g.dy) * 1.4,
       onMoveShouldSetPanResponder: (_e, g) =>
         Math.abs(g.dx) > SWIPE_THRESHOLD && Math.abs(g.dx) > Math.abs(g.dy) * 1.4,
       onPanResponderMove: (_e, g) => {
@@ -184,7 +210,7 @@ export default function FillTheRide() {
             />
             <GameStage
               seed={seed}
-              running={phase === 'playing'}
+              running={phase === 'playing' && !stuck}
               onEvent={onEvent}
               onFinish={finish}
               controlRef={controlRef}
@@ -235,6 +261,16 @@ export default function FillTheRide() {
           </View>
         )}
 
+        {phase === 'playing' && stuck && (
+          <StuckOverlay
+            onContinue={() => setStuck(false)}
+            onRetry={() => {
+              setStuck(false);
+              void begin();
+            }}
+          />
+        )}
+
         {(phase === 'won' || phase === 'lost') && (
           <ResultOverlay
             won={phase === 'won'}
@@ -277,9 +313,14 @@ function StartScreen({
       </View>
 
       <Text style={styles.startTitle}>FILL THE RIDE</Text>
+      <Text style={styles.brandLine}>
+        <Text style={styles.brandLinq}>LinQ</Text>
+        <Text style={styles.brandRest}> — smart, shared travel</Text>
+      </Text>
       <Text style={styles.startSub}>
-        Can you fill all {GAME_CONFIG.seatsRequired} seats? Collect passengers, avoid
-        traffic, and beat the clock.
+        Normal travel is full buses, pricey cabs and traffic. LinQ finds the open lane.
+        Dodge the blockers, collect all {GAME_CONFIG.seatsRequired} passengers and beat
+        the clock.
       </Text>
 
       <View style={styles.statRow}>
@@ -331,9 +372,10 @@ function StartScreen({
 
 function TutorialScreen({ onDone }: { onDone: () => void }) {
   const steps = [
-    { icon: 'swap-horizontal', title: 'Switch lanes', body: 'Swipe left or right to move between the three lanes.' },
+    { icon: 'swap-horizontal', title: 'Switch lanes', body: 'Swipe left or right, or tap the left/right side of the road, to move between the three lanes.' },
     { icon: 'people', title: 'Collect passengers', body: `Drive through all ${GAME_CONFIG.seatsRequired} passengers to fill your car.` },
-    { icon: 'warning', title: 'Avoid obstacles', body: 'Cabs, autos and full buses cost you time. Beat the clock.' },
+    { icon: 'warning', title: 'Dodge the blockers', body: 'Full buses, expensive cabs and costly cars block a lane. Switch to the open lane in time.' },
+    { icon: 'car', title: 'Why LinQ', body: 'Normal travel means traffic and full buses. LinQ = easy, shared, affordable rides.' },
   ];
   return (
     <ScrollView contentContainerStyle={styles.panel} showsVerticalScrollIndicator={false}>
@@ -489,6 +531,38 @@ function ResultOverlay({
   );
 }
 
+function StuckOverlay({
+  onContinue,
+  onRetry,
+}: {
+  onContinue: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <View style={styles.stuckOverlay} testID="game-stuck" pointerEvents="box-none">
+      <View style={styles.stuckCard}>
+        <Ionicons name="car-sport" size={44} color={colors.error} />
+        <Text style={styles.stuckTitle}>Oops! You got stuck!</Text>
+        <Text style={styles.stuckBody}>
+          That {`ride wasn't sharing with you`} — a full bus or a pricey cab blocked
+          your lane. LinQ finds the open lane.
+        </Text>
+        <View style={styles.stuckActions}>
+          <PrimaryButton
+            title="KEEP GOING"
+            icon="play"
+            onPress={onContinue}
+            testID="game-stuck-continue"
+          />
+          <Pressable style={styles.linkBtn} onPress={onRetry} testID="game-stuck-retry">
+            <Text style={styles.linkText}>Restart this run</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function StatBox({
   label,
   value,
@@ -537,6 +611,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 1,
   },
+  brandLine: { textAlign: 'center', marginTop: spacing.sm },
+  brandLinq: { fontSize: font.size.base, color: colors.primary, fontWeight: font.weight.bold },
+  brandRest: { fontSize: font.size.base, color: colors.textSecondary, fontWeight: font.weight.medium },
   startSub: {
     fontSize: font.size.base,
     color: colors.textSecondary,
@@ -605,6 +682,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.xl,
   },
+  stuckOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  stuckCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    padding: spacing.xl,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.error,
+    ...shadow.lg,
+  },
+  stuckTitle: {
+    fontSize: font.size.xl,
+    color: colors.error,
+    fontWeight: font.weight.bold,
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
+  stuckBody: {
+    fontSize: font.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginTop: spacing.xs,
+  },
+  stuckActions: { width: '100%', marginTop: spacing.lg },
   resultCard: {
     width: '100%',
     maxWidth: 400,

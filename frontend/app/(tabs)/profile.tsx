@@ -31,9 +31,16 @@ const sections: { title: string; rows: Row[] }[] = [
     ],
   },
   {
+    title: 'Rides',
+    rows: [
+      { icon: 'time-outline', label: 'Ride History', sub: 'Your completed & cancelled rides', route: '/ride-history' },
+    ],
+  },
+  {
     title: 'Payments',
     rows: [
       { icon: 'wallet-outline', label: 'Wallet & Transactions', sub: 'Balance & payment history', route: '/wallet' },
+      { icon: 'gift-outline', label: 'Rewards', sub: 'Referral & ride credits', route: '/rewards' },
       { icon: 'share-social-outline', label: 'Refer a Friend', sub: 'Invite & earn rewards', route: '/referral' },
     ],
   },

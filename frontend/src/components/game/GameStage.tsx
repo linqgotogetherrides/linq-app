@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -84,6 +84,7 @@ export default function GameStage({
   const scroll = useSharedValue(0);
   const lane = useSharedValue(engine.current.state.lanePosition);
   const shake = useSharedValue(0);
+  const hit = useSharedValue(0);
   const [pollution, setPollution] = useState(0);
 
   // A new seed means a brand new run. Without this, the previous run's state
@@ -94,6 +95,7 @@ export default function GameStage({
     scroll.value = 0;
     lane.value = engine.current.state.lanePosition;
     shake.value = 0;
+    hit.value = 0;
     pollutionRef.current = 0;
     setPollution(0);
     setEntities([]);
@@ -101,7 +103,7 @@ export default function GameStage({
     accumulatorRef.current = 0;
     finishedRef.current = false;
     lastReportedTime.current = GAME_CONFIG.durationMs;
-  }, [seed, scroll, lane, shake]);
+  }, [seed, scroll, lane, shake, hit]);
 
   const applyDelta = useCallback((delta: -1 | 1) => {
     const next = moveLane(engine.current!.state, delta);
@@ -153,6 +155,11 @@ export default function GameStage({
               shake.value = withTiming(1, { duration: 60 }, () => {
                 shake.value = withTiming(0, { duration: 260 });
               });
+              // Brief red impact flash on the car, on top of the existing
+              // screen shake, so a collision is unmissable but never fatal.
+              hit.value = withTiming(1, { duration: 70 }, () => {
+                hit.value = withTiming(0, { duration: 320 });
+              });
               void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
             } else if (event.type === 'pickup') {
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -201,7 +208,7 @@ export default function GameStage({
     };
     // Intentionally not depending on `entities`: it is updated inside the loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, onEvent, onFinish, scroll, shake]);
+  }, [running, onEvent, onFinish, scroll, shake, hit]);
 
   const playerStyle = useAnimatedStyle(() => ({
     transform: [
@@ -213,6 +220,8 @@ export default function GameStage({
   const roadStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shake.value * (shake.value > 0.5 ? 5 : -5) }],
   }));
+
+  const hitFlashStyle = useAnimatedStyle(() => ({ opacity: hit.value }));
 
   return (
     <View style={styles.stage} testID="game-stage">
@@ -259,7 +268,32 @@ export default function GameStage({
           height={roadHeight}
           intensity={pollution}
         />
+
+        <Animated.View
+          style={[styles.hitFlash, hitFlashStyle]}
+          pointerEvents="none"
+        />
       </Animated.View>
+
+      {/* Direct touch controls. Swipe still works, but tapping the left or
+          right half of the road changes lane instantly, which is the natural
+          gesture on a phone and makes the game playable one-handed. */}
+      <View style={styles.touchRow} pointerEvents="box-none">
+        <Pressable
+          style={styles.touchZone}
+          onPress={() => applyDelta(-1)}
+          testID="game-lane-left"
+          accessibilityRole="button"
+          accessibilityLabel="Move left one lane"
+        />
+        <Pressable
+          style={styles.touchZone}
+          onPress={() => applyDelta(1)}
+          testID="game-lane-right"
+          accessibilityRole="button"
+          accessibilityLabel="Move right one lane"
+        />
+      </View>
     </View>
   );
 }
@@ -334,6 +368,15 @@ const styles = StyleSheet.create({
   entity: { position: 'absolute', top: 0, left: 0 },
   laneBox: { width: '100%', alignItems: 'center', justifyContent: 'center' },
   player: { position: 'absolute', left: 0 },
+  hitFlash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: GAME_COLORS.hazard,
+  },
+  touchRow: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+  },
+  touchZone: { flex: 1 },
 });
 
 export { SCALE, GAME_COLORS };

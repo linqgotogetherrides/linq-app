@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import LinqHeader from '@/src/components/LinqHeader';
 import EmptyState from '@/src/components/EmptyState';
-import { mockTransactions } from '@/src/mock/data';
+import { useWallet } from '@/src/context/WalletContext';
+import { describeWalletTxn, formatTxnDate } from '@/src/lib/walletTxnDisplay';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
 const TABS = [
@@ -12,11 +13,19 @@ const TABS = [
   { key: 'credit', label: 'Credits' },
   { key: 'debit', label: 'Debits' },
   { key: 'reward', label: 'Rewards' },
-];
+] as const;
+
+type TabKey = (typeof TABS)[number]['key'];
 
 export default function Transactions() {
-  const [tab, setTab] = useState('all');
-  const filtered = mockTransactions.filter((t) => tab === 'all' || t.type === tab);
+  const [tab, setTab] = useState<TabKey>('all');
+  const { transactions } = useWallet();
+
+  const filtered = useMemo(() => {
+    return tab === 'all'
+      ? transactions
+      : transactions.filter((t) => describeWalletTxn(t).category === tab);
+  }, [tab, transactions]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="transactions-screen">
@@ -41,24 +50,32 @@ export default function Transactions() {
           data={filtered}
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: 40 }}
-          renderItem={({ item }) => (
-            <View style={styles.txRow}>
-              <View style={[styles.txIcon, { backgroundColor: item.type === 'debit' ? colors.errorLight : colors.successLight }]}>
-                <Ionicons name={item.type === 'debit' ? 'arrow-up' : item.type === 'reward' ? 'gift' : 'arrow-down'} size={18} color={item.type === 'debit' ? colors.error : colors.success} />
+          renderItem={({ item }) => {
+            const display = describeWalletTxn(item);
+            return (
+              <View style={styles.txRow}>
+                <View style={[styles.txIcon, { backgroundColor: display.background }]}>
+                  <Ionicons name={display.icon} size={18} color={display.tint} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.txName}>{display.title}</Text>
+                  {item.note && <Text style={styles.txSub}>{item.note}</Text>}
+                  <Text style={styles.txDate}>{formatTxnDate(item.created_at)}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={[styles.txAmount, { color: item.amount < 0 ? colors.error : colors.success }]}>
+                    {item.amount < 0 ? '-' : '+'}₹{Math.abs(item.amount)}
+                  </Text>
+                  <Text style={styles.txStatus}>Completed</Text>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.txName}>{item.title}</Text>
-                {item.subtitle && <Text style={styles.txSub}>{item.subtitle}</Text>}
-                <Text style={styles.txDate}>{item.date}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[styles.txAmount, { color: item.amount < 0 ? colors.error : colors.success }]}>{item.amount < 0 ? '-' : '+'}₹{Math.abs(item.amount)}</Text>
-                <Text style={styles.txStatus}>{item.status}</Text>
-              </View>
-            </View>
-          )}
+            );
+          }}
         />
       )}
+      <Text style={styles.footNote}>
+        Showing your last {transactions.length} wallet {transactions.length === 1 ? 'entry' : 'entries'}.
+      </Text>
     </SafeAreaView>
   );
 }
@@ -78,4 +95,5 @@ const styles = StyleSheet.create({
   txDate: { fontSize: font.size.xs, color: colors.textTertiary, marginTop: 2 },
   txAmount: { fontSize: font.size.base, fontWeight: font.weight.medium },
   txStatus: { fontSize: font.size.xs, color: colors.textTertiary, marginTop: 2, textTransform: 'capitalize' },
+  footNote: { textAlign: 'center', color: colors.textTertiary, fontSize: font.size.xs, paddingVertical: spacing.md },
 });
