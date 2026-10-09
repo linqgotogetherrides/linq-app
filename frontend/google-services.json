@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "569962904134",
-    "project_id": "linq-50ed1",
-    "storage_bucket": "linq-50ed1.firebasestorage.app"
+    "project_number": "1025626548864",
+    "project_id": "linq-7d413",
+    "storage_bucket": "linq-7d413.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:569962904134:android:9f6f50864c41560a17a847",
+        "mobilesdk_app_id": "1:1025626548864:android:2d719672d312fa4a3a5465",
         "android_client_info": {
           "package_name": "com.linq.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDbTIT6vTVvzSoH0-D37WgzjnnO3dJkkNw"
+          "current_key": "AIzaSyCQXCiGfdvDO1TlJFdGKWbRWJqGtJFGsZI"
         }
       ],
       "services": {

@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
 const CASHFREE_APP_ID = Deno.env.get("CASHFREE_APP_ID") ?? "";
 const CASHFREE_SECRET_KEY = Deno.env.get("CASHFREE_SECRET_KEY") ?? "";
-const isProd = false; // set to true for production
+const isProd = (Deno.env.get("CASHFREE_ENVIRONMENT") ?? "sandbox").toLowerCase() === "production";
 
 const CASHFREE_BASE_URL = isProd
   ? "https://api.cashfree.com/verification"
