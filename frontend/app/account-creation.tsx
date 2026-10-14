@@ -32,6 +32,26 @@ function normalizePhone(value?: string) {
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+/** LinQ pairs adults who drive to work, so riders under this are not accepted. */
+const MIN_AGE = 13;
+const MAX_AGE = 99;
+
+/**
+ * Keeps digits only and caps the length at two, so letters, symbols and
+ * three-digit values can never reach the age field.
+ */
+function sanitizeAge(text: string): string {
+  return text.replace(/\D/g, '').slice(0, 2);
+}
+
+/**
+ * Digits only, at most ten. Letters, spaces, + and dashes are dropped as they
+ * are typed, so these fields can only ever hold an Indian mobile number.
+ */
+function sanitizePhone(text: string): string {
+  return text.replace(/\D/g, '').slice(0, 10);
+}
+
 const VERIFICATION_OPTIONS: {
   key: VerificationDocument;
   label: string;
@@ -72,8 +92,8 @@ export default function AccountCreation() {
   const [loading, setLoading] = useState(false);
 
   const isStep1Valid = name.trim().length > 1;
-  const isStep2Valid = Number(age) > 0 && Number(age) < 100;
-  const isStep4Valid = emergency.length >= 10 && (!needsPhone || contactPhone.length === 10);
+  const isStep2Valid = Number(age) >= MIN_AGE && Number(age) <= MAX_AGE;
+  const isStep4Valid = emergency.length === 10 && (!needsPhone || contactPhone.length === 10);
   const canFinalize = isStep1Valid && isStep2Valid;
 
   const handleUploadPhoto = async () => {
@@ -110,7 +130,7 @@ export default function AccountCreation() {
       setStep(2);
     } else if (step === 2) {
       if (!isStep2Valid) {
-        showToast('Please enter a valid age');
+        showToast('Only 13+ year olds are allowed');
         return;
       }
       setStep(3);
@@ -172,7 +192,7 @@ export default function AccountCreation() {
         gender: gender || 'female',
         women_only_mode: gender === 'female' ? womenOnly : false,
         bio: bio.trim(),
-        emergency_contact: emergency.trim(),
+        emergency_contact: normalizePhone(emergency) || null,
         email: oauthEmail || null,
         verification_status: 'pending',
         verification_document: verificationDoc,
@@ -327,14 +347,22 @@ export default function AccountCreation() {
                   <TextInput
                     testID="input-age"
                     value={age}
-                    onChangeText={setAge}
+                    onChangeText={(text) => setAge(sanitizeAge(text))}
                     keyboardType="number-pad"
                     maxLength={2}
-                    placeholder="Enter your age (e.g. 24)"
+                    placeholder="e.g. 24 (13+)"
                     placeholderTextColor={colors.textTertiary}
                     style={styles.textInput}
                   />
                 </View>
+
+                {/* The Next button is disabled while the age is invalid, so the
+                    toast on step 2 is unreachable. Say why inline instead. */}
+                {age.length > 0 && Number(age) < MIN_AGE && (
+                  <Text testID="input-age-error" style={styles.errorText}>
+                    Only 13+ year olds are allowed.
+                  </Text>
+                )}
 
                 <Text style={[styles.inputLabel, { marginTop: spacing.lg }]}>
                   What&apos;s your gender?
@@ -464,7 +492,7 @@ export default function AccountCreation() {
                       <TextInput
                         testID="contact-phone-input"
                         value={contactPhone}
-                        onChangeText={setContactPhone}
+                        onChangeText={(text) => setContactPhone(sanitizePhone(text))}
                         placeholder="Enter your 10-digit phone number"
                         placeholderTextColor={colors.textTertiary}
                         keyboardType="phone-pad"
@@ -488,7 +516,7 @@ export default function AccountCreation() {
                   <TextInput
                     testID="emergency-contact-input"
                     value={emergency}
-                    onChangeText={setEmergency}
+                    onChangeText={(text) => setEmergency(sanitizePhone(text))}
                     placeholder="Enter 10-digit phone number"
                     placeholderTextColor={colors.textTertiary}
                     keyboardType="phone-pad"
@@ -498,6 +526,19 @@ export default function AccountCreation() {
                   />
                 </View>
                 <Text style={styles.helper}>Contact notified during emergency SOS triggers.</Text>
+
+                {/* Next is disabled while these are invalid, so the toast for
+                    step 4 never fires. Explain the block inline instead. */}
+                {emergency.length > 0 && emergency.length < 10 && (
+                  <Text testID="emergency-contact-error" style={styles.errorText}>
+                    Emergency contact must be exactly 10 digits.
+                  </Text>
+                )}
+                {needsPhone && contactPhone.length > 0 && contactPhone.length < 10 && (
+                  <Text testID="contact-phone-error" style={styles.errorText}>
+                    Phone number must be exactly 10 digits.
+                  </Text>
+                )}
 
                 <Text style={[styles.inputLabel, { marginTop: spacing.lg }]}>
                   <Ionicons name="camera" size={14} color={colors.primary} /> Profile Photo
@@ -822,6 +863,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   textInput: { flex: 1, height: 52, color: colors.textPrimary, fontSize: font.size.base },
+  errorText: { color: colors.error, fontSize: font.size.xs, marginTop: spacing.xs },
 
   inputRow: {
     flexDirection: 'row',

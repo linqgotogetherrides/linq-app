@@ -38,6 +38,23 @@ function normalizePhone(value?: string) {
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+/** Must match the floor enforced at signup, or the rule is trivially bypassed. */
+const MIN_AGE = 13;
+const MAX_AGE = 99;
+
+/** Digits only, two characters at most. */
+function sanitizeAge(text: string): string {
+  return text.replace(/\D/g, '').slice(0, 2);
+}
+
+/**
+ * Digits only, at most ten. Kept in step with the emergency-contact field in
+ * account creation, which applies the same rule at signup.
+ */
+function sanitizePhone(text: string): string {
+  return text.replace(/\D/g, '').slice(0, 10);
+}
+
 function verificationLabel(status?: VerificationStatus) {
   if (status === 'verified') return 'Verified';
   if (status === 'pending') return 'Pending review';
@@ -165,8 +182,8 @@ export default function PersonalInfo() {
       showToast('Emergency contact must be exactly 10 digits');
       return;
     }
-    if (normalizedAge != null && (!Number.isInteger(normalizedAge) || normalizedAge <= 0 || normalizedAge >= 100)) {
-      showToast('Enter a valid age between 1 and 99');
+    if (normalizedAge != null && (!Number.isInteger(normalizedAge) || normalizedAge < MIN_AGE || normalizedAge > MAX_AGE)) {
+      showToast('Only 13+ year olds are allowed');
       return;
     }
 
@@ -261,10 +278,10 @@ export default function PersonalInfo() {
           <Field
             label="Age"
             value={age}
-            onChange={setAge}
-            placeholder="Age"
+            onChange={sanitizeAge}
+            placeholder="13+"
             keyboardType="number-pad"
-            maxLength={3}
+            maxLength={2}
             testID="pi-age"
           />
 
@@ -355,8 +372,8 @@ export default function PersonalInfo() {
           <Field
             label="Emergency Contact"
             value={emergency}
-            onChange={setEmergency}
-            placeholder="Emergency contact"
+            onChange={sanitizePhone}
+            placeholder="10-digit phone number"
             keyboardType="phone-pad"
             maxLength={10}
             testID="pi-emergency"

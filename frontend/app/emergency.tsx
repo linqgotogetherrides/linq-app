@@ -11,6 +11,14 @@ import PrimaryButton from '@/src/components/PrimaryButton';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
+/**
+ * Digits only, at most ten. Matches the rule enforced in account creation and
+ * on the profile screen, so this field cannot become the odd one out.
+ */
+function sanitizePhone(text: string): string {
+  return text.replace(/\D/g, '').slice(0, 10);
+}
+
 export default function Emergency() {
   const router = useRouter();
   const [emergency, setEmergency] = useState('');
@@ -43,7 +51,7 @@ export default function Emergency() {
     try {
       setLoading(true);
       const updates: any = {
-        emergency_contact: emergency.trim(),
+        emergency_contact: emergency || null,
       };
       if (avatarUrl) {
         updates.avatar_url = avatarUrl;
@@ -88,8 +96,8 @@ export default function Emergency() {
               <TextInput
                 testID="emergency-contact-input"
                 value={emergency}
-                onChangeText={setEmergency}
-                placeholder="Enter contact number"
+                onChangeText={(text) => setEmergency(sanitizePhone(text))}
+                placeholder="Enter 10-digit phone number"
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="phone-pad"
                 maxLength={10}
@@ -105,7 +113,7 @@ export default function Emergency() {
             <Text style={styles.helper}>Help others recognize you</Text>
 
             <View style={{ marginTop: spacing.lg }}>
-              <PrimaryButton testID="emergency-continue" title={loading ? "Saving..." : "Continue"} iconRight={loading ? undefined : "arrow-forward"} onPress={handleContinue} disabled={loading || emergency.length < 10} />
+              <PrimaryButton testID="emergency-continue" title={loading ? "Saving..." : "Continue"} iconRight={loading ? undefined : "arrow-forward"} onPress={handleContinue} disabled={loading || emergency.length !== 10} />
             </View>
           </View>
 
