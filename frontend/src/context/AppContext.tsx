@@ -15,6 +15,7 @@ import { supabase } from '@/src/lib/supabase';
 import { ensureUserProfile } from '@/src/services/userProfile';
 import { clearSession, readSession } from '@/src/services/session';
 import { rideRequestService } from '@/src/services/rideRequestService';
+import { savedPlaceKey } from '@/src/lib/location/savedPlaces';
 
 interface AppContextValue {
   user: User | null;
@@ -49,9 +50,12 @@ interface AppContextValue {
   refreshUser: () => Promise<void>;
   saveUserLocation: (
     type: SavedLocationType,
-    location: SavedLocation,
-    role: 'pickup' | 'drop'
+    location: SavedLocation
   ) => Promise<boolean>;
+  saveCustomLocation: (name: string, location: SavedLocation) => Promise<boolean>;
+  /** Places the rider declined to save, so the prompt is not shown again. */
+  savedDismissals: Set<string>;
+  dismissSavePlace: (location: SavedLocation) => void;
   locationFlowResult: LocationFlowResult | null;
   setLocationFlowResult: (result: LocationFlowResult) => void;
   clearLocationFlowResult: () => void;
@@ -65,6 +69,9 @@ interface AppContextValue {
     decision: 'accepted' | 'declined'
   ) => Promise<void>;
 }
+
+/** Caps the custom saved-place list so the jsonb column cannot grow unbounded. */
+const MAX_CUSTOM_LOCATIONS = 12;
 
 const defaultAccess: AccessState = {
   freeRequestsRemaining: 2,
@@ -104,10 +111,16 @@ function normalizeSavedLocations(value: unknown): SavedUserLocations {
   }
   if (!parsed || typeof parsed !== 'object') return {};
   const saved = parsed as Partial<SavedUserLocations>;
+  const custom = Array.isArray(saved.custom)
+    ? saved.custom
+        .map(normalizeSavedLocation)
+        .filter((entry): entry is SavedLocation => Boolean(entry))
+    : [];
   return {
     home: normalizeSavedLocation(saved.home),
     office: normalizeSavedLocation(saved.office),
     college: normalizeSavedLocation(saved.college),
+    custom,
     defaultPickup: normalizeSavedLocation(saved.defaultPickup),
     defaultDrop: normalizeSavedLocation(saved.defaultDrop),
   };
@@ -145,6 +158,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [access, setAccess] = useState<AccessState>(defaultAccess);
   const [toast, setToast] = useState<string | null>(null);
   const [locationFlowResult, setLocationFlowResult] = useState<LocationFlowResult | null>(null);
+  const [savedDismissals, setSavedDismissals] = useState<Set<string>>(new Set());
   const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
   const [rideNotifications, setRideNotifications] = useState<Notification[]>([]);
   const [isLoadingRideActivity, setIsLoadingRideActivity] = useState(false);
@@ -242,8 +256,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const saveUserLocation = useCallback(async (
     type: SavedLocationType,
-    location: SavedLocation,
-    role: 'pickup' | 'drop'
+    location: SavedLocation
   ): Promise<boolean> => {
     if (!user) {
       showToast('Sign in to save this location for quick access.');
@@ -258,7 +271,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const nextSaved: SavedUserLocations = {
       ...currentSaved,
       [type]: savedLocation,
-      [role === 'pickup' ? 'defaultPickup' : 'defaultDrop']: savedLocation,
     };
     const legacyAddressField =
       type === 'home' ? 'home_address' : type === 'office' ? 'office_address' : 'college_address';
@@ -288,6 +300,70 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     showToast(`${type[0].toUpperCase()}${type.slice(1)} saved for quick access`);
     return true;
   }, [showToast, user]);
+
+  /**
+   * Persists a user-named place into the existing saved_locations column.
+   * Replaces an existing custom place with the same normalised name.
+   */
+  const saveCustomLocation = useCallback(async (
+    name: string,
+    location: SavedLocation
+  ): Promise<boolean> => {
+    if (!user) {
+      showToast('Sign in to save this location for quick access.');
+      return false;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      showToast('Give this place a name before saving.');
+      return false;
+    }
+
+    const savedLocation: SavedLocation = {
+      ...location,
+      label: trimmed,
+      address: location.address || trimmed,
+      updatedAt: new Date().toISOString(),
+    };
+    const existing = user.savedLocations?.custom || [];
+    const key = trimmed.toLowerCase();
+    const nextCustom = [
+      ...existing.filter((place) => place.label.toLowerCase() !== key),
+      savedLocation,
+    ].slice(-MAX_CUSTOM_LOCATIONS);
+    const nextSaved: SavedUserLocations = {
+      ...(user.savedLocations || {}),
+      custom: nextCustom,
+    };
+
+    try {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({ saved_locations: nextSaved })
+        .eq('id', user.id);
+
+      if (error) throw error;
+    } catch {
+      showToast('Location selected, but it could not be saved to your profile.');
+      return false;
+    }
+
+    setUser({ ...user, savedLocations: nextSaved });
+    showToast(`${trimmed} saved for quick access`);
+    return true;
+  }, [showToast, user]);
+
+  /**
+   * Records that the rider declined to keep a place. Session-scoped on purpose:
+   * the offer stays optional and never nags within one booking session.
+   */
+  const dismissSavePlace = useCallback((location: SavedLocation) => {
+    setSavedDismissals((current) => {
+      const next = new Set(current);
+      next.add(savedPlaceKey(location));
+      return next;
+    });
+  }, []);
 
   /** Maps a user_profiles row onto the app's User shape and publishes it. */
   const mapAndSet = useCallback((data: Record<string, any>): User => {
@@ -447,7 +523,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         confirmResult, setConfirmResult, otpVerifiedUid, setOtpVerifiedUid,
         access, useRequest, useChat, upgradePlan, singleUnlock,
         toast, showToast, fetchUserProfile, refreshUser,
-        saveUserLocation, locationFlowResult, setLocationFlowResult, clearLocationFlowResult,
+        saveUserLocation, saveCustomLocation, savedDismissals, dismissSavePlace, locationFlowResult, setLocationFlowResult, clearLocationFlowResult,
         rideRequests, rideNotifications,
         pendingRideRequestCount: rideRequests.filter((request) => request.status === 'pending').length,
         isLoadingRideActivity, refreshRideActivity, respondToRideRequest

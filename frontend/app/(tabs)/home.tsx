@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import GuestPrompt from '@/src/components/GuestPrompt';
@@ -16,7 +16,10 @@ import SosHoldButton from '@/src/components/SosHoldButton';
 import SosActiveBanner from '@/src/components/sos/SosActiveBanner';
 import { useSos } from '@/src/context/SosContext';
 import { rideService } from '@/src/services/rideService';
-import { Ride, RideType } from '@/src/types';
+import SavePlaceSheet from '@/src/components/SavePlaceSheet';
+import { DUPLICATE_LOCATION_MESSAGE, isSameLocation } from '@/src/lib/location/duplicateGuard';
+import { isScheduleInPast } from '@/src/lib/rideSchedule';
+import { Ride, RideType, SavedLocation } from '@/src/types';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -34,32 +37,40 @@ export default function Home() {
   const {
     location: currentLocation,
     isLoading: isLocating,
-    error: locationError,
     requestLocation: requestCurrentLocation,
   } = useCurrentLocation({ autoLoad: true });
   const [mode, setMode] = useState<RideType>('daily');
-  const [pickup, setPickup] = useState(
-    user?.savedLocations?.defaultPickup?.label || user?.homeAddress || ''
+  // Single source of truth for both ride ends. Changing one never disturbs the
+  // other, and the selector updates exactly one of these per selection.
+  const [pickupLocation, setPickupLocation] = useState<SavedLocation | null>(
+    user?.savedLocations?.defaultPickup ?? null
   );
-  const [pickupCoordinates, setPickupCoordinates] = useState<LocationCoordinates | null>(() => {
-    const saved = user?.savedLocations?.defaultPickup;
-    return saved
-      ? { latitude: saved.latitude, longitude: saved.longitude }
-      : null;
-  });
-  const [destination, setDestination] = useState(
-    user?.savedLocations?.defaultDrop?.label || ''
+  const [dropLocation, setDropLocation] = useState<SavedLocation | null>(
+    user?.savedLocations?.defaultDrop ?? null
   );
-  const [destinationCoordinates, setDestinationCoordinates] = useState<LocationCoordinates | null>(() => {
-    const saved = user?.savedLocations?.defaultDrop;
-    return saved
-      ? { latitude: saved.latitude, longitude: saved.longitude }
-      : null;
-  });
-  const [routeMetrics, setRouteMetrics] = useState<{
-    distanceMeters?: number;
-    durationSeconds?: number;
-  } | null>(null);
+  const [pendingSave, setPendingSave] = useState<SavedLocation | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const pickup = pickupLocation?.address || '';
+  const destination = dropLocation?.address || '';
+  // Memoised so the nearby-rides effect does not re-fire on every render.
+  const pickupCoordinates = useMemo<LocationCoordinates | null>(
+    () =>
+      pickupLocation
+        ? { latitude: pickupLocation.latitude, longitude: pickupLocation.longitude }
+        : null,
+    [pickupLocation]
+  );
+  const destinationCoordinates = useMemo<LocationCoordinates | null>(
+    () =>
+      dropLocation
+        ? { latitude: dropLocation.latitude, longitude: dropLocation.longitude }
+        : null,
+    [dropLocation]
+  );
+
+  // Route distances are not shown here; they are derived when a ride is
+  // posted, so home does not spend a routing request on every edit.
   const [selectedDays, setSelectedDays] = useState<number[]>([0, 1, 2, 3, 4, 5]);
   const [presetIdx, setPresetIdx] = useState(0);
   const [travelTime, setTravelTime] = useState('');
@@ -69,34 +80,14 @@ export default function Home() {
   const nearbyRequestIdRef = React.useRef(0);
 
   React.useEffect(() => {
-    if (!pickup && user?.savedLocations?.defaultPickup) {
-      const saved = user.savedLocations.defaultPickup;
-      setPickup(saved.label);
-      setPickupCoordinates({ latitude: saved.latitude, longitude: saved.longitude });
-    }
-    if (!destination && user?.savedLocations?.defaultDrop) {
-      const saved = user.savedLocations.defaultDrop;
-      setDestination(saved.label);
-      setDestinationCoordinates({ latitude: saved.latitude, longitude: saved.longitude });
-    }
-  }, [destination, pickup, user?.savedLocations?.defaultDrop, user?.savedLocations?.defaultPickup]);
-
-  React.useEffect(() => {
     if (!locationFlowResult || locationFlowResult.source !== 'home') return;
-    setPickup(locationFlowResult.pickup.label);
-    setPickupCoordinates({
-      latitude: locationFlowResult.pickup.latitude,
-      longitude: locationFlowResult.pickup.longitude,
-    });
-    setDestination(locationFlowResult.destination.label);
-    setDestinationCoordinates({
-      latitude: locationFlowResult.destination.latitude,
-      longitude: locationFlowResult.destination.longitude,
-    });
-    setRouteMetrics({
-      distanceMeters: locationFlowResult.distanceMeters,
-      durationSeconds: locationFlowResult.durationSeconds,
-    });
+    // Exactly one field changes per selection.
+    if (locationFlowResult.field === 'pickup') {
+      setPickupLocation(locationFlowResult.location);
+    } else {
+      setDropLocation(locationFlowResult.location);
+    }
+    if (locationFlowResult.isNewPlace) setPendingSave(locationFlowResult.location);
     clearLocationFlowResult();
   }, [clearLocationFlowResult, locationFlowResult]);
 
@@ -125,23 +116,20 @@ export default function Home() {
   const [timePicker, setTimePicker] = useState<null | 'travel' | 'return'>(null);
   const [datePicker, setDatePicker] = useState(false);
 
-  const openLocationFlow = (
-    entry: 'pickup' | 'drop',
-    selectedPickup?: { label: string; coordinates: LocationCoordinates }
-  ) => {
-    clearLocationFlowResult();
-    setRouteMetrics(null);
+  const openLocationSelector = (field: 'pickup' | 'drop') => {
+    // The selector is told the opposite end so it can reject duplicates and
+    // hide that place from its quick selects.
+    const opponent = field === 'pickup' ? dropLocation : pickupLocation;
     router.push({
       pathname: '/ride-location-flow',
       params: {
         source: 'home',
-        entry,
-        rideType: mode === 'planned' ? 'planned' : 'daily',
-        ...(selectedPickup
+        field,
+        ...(opponent
           ? {
-              pickup: selectedPickup.label,
-              pickupLatitude: selectedPickup.coordinates.latitude.toString(),
-              pickupLongitude: selectedPickup.coordinates.longitude.toString(),
+              opponentAddress: opponent.address,
+              opponentLatitude: opponent.latitude.toString(),
+              opponentLongitude: opponent.longitude.toString(),
             }
           : {}),
       },
@@ -153,16 +141,40 @@ export default function Home() {
     setSelectedDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i]));
   };
 
-  const canSearch = (() => {
-    if (!pickup.trim() || !destination.trim()) return false;
-    if (!pickupCoordinates || !destinationCoordinates) return false;
-    if (mode === 'daily') return selectedDays.length > 0 && !!travelTime;
-    if (mode === 'planned') return !!travelDate && !!travelTime;
-    return true;
-  })();
+  /**
+   * Explains what is still missing, but only when the rider actually tries to
+   * continue. A planned ride whose date or time has already passed is reported
+   * separately, since re-picking the date is the actual fix.
+   */
+  const describeValidation = (): string | null => {
+    if (!pickup.trim() || !destination.trim()) return 'Add pickup & drop to continue';
+    if (!pickupCoordinates || !destinationCoordinates) {
+      return 'Choose a location from the map or search';
+    }
+    if (mode === 'planned') {
+      if (!travelDate || !travelTime) return 'Select travel date & time';
+      if (isScheduleInPast(travelDate, travelTime)) {
+        return 'Choose a travel date and time that have not passed yet';
+      }
+      return null;
+    }
+    if (selectedDays.length === 0) return 'Pick at least one day';
+    if (!travelTime) return 'Select travel time';
+    return null;
+  };
+
+  // Any correction clears the message.
+  React.useEffect(() => {
+    setValidationError(null);
+  }, [mode, selectedDays, travelDate, travelTime, pickupLocation, dropLocation]);
 
   const search = () => {
-    if (!canSearch) return;
+    const problem = describeValidation();
+    if (problem) {
+      setValidationError(problem);
+      return;
+    }
+    setValidationError(null);
     router.push({
       pathname: '/search-results',
       params: {
@@ -183,12 +195,22 @@ export default function Home() {
   };
 
   const handlePost = () => {
-    if (!pickup.trim() || !pickupCoordinates) {
-      openLocationFlow('pickup');
+    if (!pickupLocation) {
+      openLocationSelector('pickup');
       return;
     }
-    if (!destination.trim() || !destinationCoordinates) {
-      openLocationFlow('drop', { label: pickup, coordinates: pickupCoordinates });
+    if (!dropLocation) {
+      openLocationSelector('drop');
+      return;
+    }
+    // Schedule problems are reported in place rather than silently navigating.
+    const problem = describeValidation();
+    if (problem) {
+      setValidationError(problem);
+      return;
+    }
+    setValidationError(null);
+    if (!pickupLocation || !dropLocation || !pickupCoordinates || !destinationCoordinates) {
       return;
     }
     router.push({
@@ -202,12 +224,8 @@ export default function Home() {
         travelDate,
         pickupLatitude: pickupCoordinates.latitude.toString(),
         pickupLongitude: pickupCoordinates.longitude.toString(),
-        pickupAccuracy: pickupCoordinates.accuracy?.toString(),
-        pickupTimestamp: pickupCoordinates.timestamp?.toString(),
         destinationLatitude: destinationCoordinates.latitude.toString(),
         destinationLongitude: destinationCoordinates.longitude.toString(),
-        destinationAccuracy: destinationCoordinates.accuracy?.toString(),
-        destinationTimestamp: destinationCoordinates.timestamp?.toString(),
       },
     });
   };
@@ -222,17 +240,21 @@ export default function Home() {
       return;
     }
 
-    const selected = {
+    const location: SavedLocation = {
       label: current.label,
-      coordinates: {
-        latitude: current.latitude,
-        longitude: current.longitude,
-        accuracy: current.accuracy,
-        timestamp: current.timestamp,
-      },
+      address: current.address || current.label,
+      latitude: current.latitude,
+      longitude: current.longitude,
     };
-    showToast('Precise current location found. Confirm it on the map.');
-    openLocationFlow('pickup', selected);
+
+    // Never silently overwrite a valid pickup that is a different place.
+    if (isSameLocation(location, dropLocation)) {
+      showToast(DUPLICATE_LOCATION_MESSAGE);
+      return;
+    }
+
+    setPickupLocation(location);
+    setPendingSave(location);
   };
 
   // Home is the entry point for searching, finding a ride twin and reaching the
@@ -257,7 +279,7 @@ export default function Home() {
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.greeting}>Good morning, {user?.name || 'Guest'} 👋</Text>
-            <Pressable style={styles.locationRow} testID="location-selector" onPress={() => openLocationFlow('pickup')}>
+            <Pressable style={styles.locationRow} testID="location-selector" onPress={() => openLocationSelector('pickup')}>
               <Ionicons name="location" size={14} color={colors.primary} />
               <Text style={styles.location} numberOfLines={1}>{pickup || 'Choose pickup location'}</Text>
               <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
@@ -329,9 +351,15 @@ export default function Home() {
             </View>
             <View style={{ flex: 1 }}>
               <View style={styles.locField}>
-                <Pressable style={{ flex: 1 }} testID="pickup-field" onPress={() => openLocationFlow('pickup')}>
+                <Pressable style={{ flex: 1 }} testID="pickup-field" onPress={() => openLocationSelector('pickup')}>
                   <Text style={styles.fieldLabel}>PICKUP LOCATION</Text>
-                  <Text style={styles.fieldVal} numberOfLines={1}>{pickup || 'Choose pickup'}</Text>
+                  <Text
+                    style={[styles.fieldVal, !pickup && { color: colors.textTertiary }]}
+                    numberOfLines={1}
+                    accessibilityLabel={pickup ? `Pickup location: ${pickup}` : 'Pickup location not set'}
+                  >
+                    {pickup || 'Choose pickup'}
+                  </Text>
                 </Pressable>
                 <Pressable style={styles.trackLive} testID="track-live" onPress={handleTrackLive} disabled={isLocating}>
                   <Ionicons name="navigate" size={12} color={colors.primary} />
@@ -342,32 +370,22 @@ export default function Home() {
               <Pressable
                 style={styles.locField}
                 testID="destination-field"
-                onPress={() => openLocationFlow(
-                  'drop',
-                  pickupCoordinates
-                    ? { label: pickup, coordinates: pickupCoordinates }
-                    : undefined
-                )}
+                onPress={() => openLocationSelector('drop')}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>DROP LOCATION</Text>
-                  <Text style={[styles.fieldVal, !destination && { color: colors.textTertiary }]} numberOfLines={1}>{destination || 'Where are you going?'}</Text>
+                  <Text
+                    style={[styles.fieldVal, !destination && { color: colors.textTertiary }]}
+                    numberOfLines={1}
+                    accessibilityLabel={destination ? `Drop location: ${destination}` : 'Drop location not set'}
+                  >
+                    {destination || 'Where are you going?'}
+                  </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
               </Pressable>
             </View>
           </View>
-          {locationError && <Text style={styles.locationError}>{locationError}</Text>}
-
-          {routeMetrics && (
-            <View style={styles.routeReady} testID="home-route-ready">
-              <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-              <View style={styles.routeReadyCopy}>
-                <Text style={styles.routeReadyTitle}>Route ready</Text>
-                <Text style={styles.routeReadyMeta}>Pickup and drop confirmed</Text>
-              </View>
-            </View>
-          )}
 
           {mode === 'daily' && (
             <View style={{ marginTop: spacing.lg }}>
@@ -424,20 +442,21 @@ export default function Home() {
             </View>
           )}
 
-          {!canSearch && (
-            <Text style={styles.hint}>
-              {(!pickup || !destination)
-                ? 'Add pickup & drop to continue'
-                : (!pickupCoordinates || !destinationCoordinates)
-                  ? 'Choose a location from the OpenStreetMap suggestions'
-                  : mode === 'daily'
-                    ? 'Pick at least one day'
-                    : 'Select travel date & time'}
-            </Text>
+          {/* Validation appears only after an attempted action, never as a
+              standing instruction. */}
+          {validationError && (
+            <View style={styles.validationRow} testID="home-validation-error">
+              <Ionicons name="alert-circle" size={15} color={colors.error} />
+              <Text style={styles.validationText}>{validationError}</Text>
+            </View>
           )}
 
           <View style={styles.searchActions}>
-            <Pressable testID="find-ride-twin-button" style={[styles.findBtn, !canSearch && styles.findBtnDisabled]} disabled={!canSearch} onPress={search}>
+            <Pressable
+              testID="find-ride-twin-button"
+              style={styles.findBtn}
+              onPress={search}
+            >
               <Ionicons name="search" size={16} color={colors.textInverse} />
               <Text style={styles.findText}>Find my Ride Twin</Text>
             </Pressable>
@@ -501,6 +520,13 @@ export default function Home() {
         </View>
       </ScrollView>
 
+      {/* Optional, non-blocking offer once a location is already applied. */}
+      <SavePlaceSheet
+        visible={!!pendingSave}
+        location={pendingSave}
+        onDismiss={() => setPendingSave(null)}
+      />
+
       {/* Time Modals */}
       <TimePickerModal
         visible={timePicker !== null}
@@ -547,20 +573,8 @@ const styles = StyleSheet.create({
   trackText: { fontSize: font.size.xs, color: colors.primary, fontWeight: font.weight.medium },
   divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
 
-  hint: { fontSize: font.size.xs, color: colors.warning, marginTop: spacing.md, textAlign: 'center' },
-  locationError: { fontSize: font.size.xs, color: colors.error, marginTop: spacing.sm, textAlign: 'center' },
-  routeReady: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    padding: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.successLight,
-  },
-  routeReadyCopy: { flex: 1 },
-  routeReadyTitle: { color: colors.success, fontSize: font.size.sm, fontWeight: font.weight.bold },
-  routeReadyMeta: { marginTop: 2, color: colors.textSecondary, fontSize: font.size.xs },
+  validationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md },
+  validationText: { fontSize: font.size.xs, color: colors.error, textAlign: 'center', flexShrink: 1 },
 
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   smallLabel: { fontSize: font.size.sm, color: colors.textSecondary },
@@ -580,7 +594,7 @@ const styles = StyleSheet.create({
 
   searchActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
   findBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, height: 48, borderRadius: radius.pill, backgroundColor: colors.primary },
-  findBtnDisabled: { backgroundColor: colors.borderStrong },
+  
   findText: { color: colors.textInverse, fontSize: font.size.base, fontWeight: font.weight.medium },
   postBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, height: 48, paddingHorizontal: spacing.lg, borderRadius: radius.pill, borderWidth: 1.5, borderColor: colors.primary },
   postText: { color: colors.primary, fontSize: font.size.base, fontWeight: font.weight.medium },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Switch, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +26,9 @@ import {
   isTimeBeforeNow,
   toIsoDate,
 } from '@/src/lib/rideSchedule';
+import SavePlaceSheet from '@/src/components/SavePlaceSheet';
+import { useRouteMetrics } from '@/src/hooks/useRouteMetrics';
+import type { SavedLocation } from '@/src/types';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -102,10 +105,35 @@ export default function CreateRide() {
       ? { latitude: savedDefaultDrop.latitude, longitude: savedDefaultDrop.longitude }
       : null;
   });
-  const [routeMetrics, setRouteMetrics] = useState<{
-    distanceMeters?: number;
-    durationSeconds?: number;
-  } | null>(null);
+  const [pendingSave, setPendingSave] = useState<SavedLocation | null>(null);
+
+  // Route and price follow whichever pair of locations is currently valid.
+  const routePickup = useMemo<SavedLocation | null>(
+    () =>
+      pickupCoordinates && pickup
+        ? {
+            label: pickup,
+            address: pickup,
+            latitude: pickupCoordinates.latitude,
+            longitude: pickupCoordinates.longitude,
+          }
+        : null,
+    [pickup, pickupCoordinates]
+  );
+  const routeDrop = useMemo<SavedLocation | null>(
+    () =>
+      destinationCoordinates && destination
+        ? {
+            label: destination,
+            address: destination,
+            latitude: destinationCoordinates.latitude,
+            longitude: destinationCoordinates.longitude,
+          }
+        : null,
+    [destination, destinationCoordinates]
+  );
+  const { metrics: routeMetrics } = useRouteMetrics(routePickup, routeDrop);
+
   const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5]);
   const [presetIdx, setPresetIdx] = useState(0);
   const [hasVehicle, setHasVehicle] = useState(false);
@@ -196,25 +224,30 @@ export default function CreateRide() {
 
   React.useEffect(() => {
     if (!locationFlowResult || locationFlowResult.source !== 'create-ride') return;
-    setPickup(locationFlowResult.pickup.label);
-    setPickupCoordinates({
-      latitude: locationFlowResult.pickup.latitude,
-      longitude: locationFlowResult.pickup.longitude,
-    });
-    setDestination(locationFlowResult.destination.label);
-    setDestinationCoordinates({
-      latitude: locationFlowResult.destination.latitude,
-      longitude: locationFlowResult.destination.longitude,
-    });
-    setRouteMetrics({
-      distanceMeters: locationFlowResult.distanceMeters,
-      durationSeconds: locationFlowResult.durationSeconds,
-    });
-    // Price is derived from the real route, not a hardcoded 150.
-    const suggested = suggestPricePerSeat(locationFlowResult.distanceMeters);
-    if (suggested > 0) setPrice(suggested);
+    // Exactly one field changes per selection.
+    if (locationFlowResult.field === 'pickup') {
+      setPickup(locationFlowResult.location.label);
+      setPickupCoordinates({
+        latitude: locationFlowResult.location.latitude,
+        longitude: locationFlowResult.location.longitude,
+      });
+    } else {
+      setDestination(locationFlowResult.location.label);
+      setDestinationCoordinates({
+        latitude: locationFlowResult.location.latitude,
+        longitude: locationFlowResult.location.longitude,
+      });
+    }
+    if (locationFlowResult.isNewPlace) setPendingSave(locationFlowResult.location);
     clearLocationFlowResult();
   }, [clearLocationFlowResult, locationFlowResult]);
+
+  // Price is derived from the real road route, not a hardcoded 150.
+  React.useEffect(() => {
+    if (!routeMetrics) return;
+    const suggested = suggestPricePerSeat(routeMetrics.distanceMeters);
+    if (suggested > 0) setPrice(suggested);
+  }, [routeMetrics]);
 
   // Mirror the form into the module-level draft so a remount (for example
   // after the location flow) cannot wipe what the rider already entered.
@@ -286,20 +319,26 @@ export default function CreateRide() {
     setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i]));
   };
 
-  const openLocationFlow = (entry: 'pickup' | 'drop') => {
-    clearLocationFlowResult();
-    setRouteMetrics(null);
+  const openLocationFlow = (field: 'pickup' | 'drop') => {
+    // The selector receives the opposite end so it can reject duplicates.
+    const opponent =
+      field === 'pickup'
+        ? destinationCoordinates && destination
+          ? { label: destination, latitude: destinationCoordinates.latitude, longitude: destinationCoordinates.longitude }
+          : null
+        : pickupCoordinates && pickup
+          ? { label: pickup, latitude: pickupCoordinates.latitude, longitude: pickupCoordinates.longitude }
+          : null;
     router.push({
       pathname: '/ride-location-flow',
       params: {
         source: 'create-ride',
-        entry,
-        rideType,
-        ...(pickup && pickupCoordinates
+        field,
+        ...(opponent
           ? {
-              pickup,
-              pickupLatitude: pickupCoordinates.latitude.toString(),
-              pickupLongitude: pickupCoordinates.longitude.toString(),
+              opponentAddress: opponent.label,
+              opponentLatitude: opponent.latitude.toString(),
+              opponentLongitude: opponent.longitude.toString(),
             }
           : {}),
       },
@@ -765,6 +804,13 @@ export default function CreateRide() {
         </Modal>
 
       </KeyboardAvoidingView>
+
+      {/* Optional, non-blocking offer once a location is already applied. */}
+      <SavePlaceSheet
+        visible={!!pendingSave}
+        location={pendingSave}
+        onDismiss={() => setPendingSave(null)}
+      />
     </SafeAreaView>
   );
 }

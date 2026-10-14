@@ -24,7 +24,8 @@ interface Props {
 
 type MapMessage =
   | { type: 'linq-map-ready' }
-  | { type: 'linq-map-center'; latitude: number; longitude: number };
+  | { type: 'linq-map-center'; latitude: number; longitude: number }
+  | { type: 'linq-map-tap'; latitude: number; longitude: number };
 
 const DEFAULT_CENTER: LocationCoordinates = {
   latitude: 17.44,
@@ -135,6 +136,19 @@ function buildMapHtml(coordinate: LocationCoordinates) {
       });
     }
 
+    // Panning only moves the marker for visual feedback. Selection is a
+    // deliberate tap, so browsing the map never commits a location.
+    map.on('click', function(event) {
+      var point = event.latlng;
+      selectionMarker.setLatLng(point);
+      userInteracted = true;
+      sendMessage({
+        type: 'linq-map-tap',
+        latitude: point.lat,
+        longitude: point.lng
+      });
+    });
+
     window.linqFocusMap = function(latitude, longitude, zoom) {
       var current = map.getCenter();
       if (Math.abs(current.lat - latitude) < 0.000001 && Math.abs(current.lng - longitude) < 0.000001) {
@@ -193,7 +207,7 @@ export default function LocationSelectionMap({
       return;
     }
     if (
-      message.type !== 'linq-map-center' ||
+      (message.type !== 'linq-map-center' && message.type !== 'linq-map-tap') ||
       !Number.isFinite(message.latitude) ||
       !Number.isFinite(message.longitude)
     ) {
@@ -205,8 +219,12 @@ export default function LocationSelectionMap({
       longitude: message.longitude,
     };
     lastCenterRef.current = next;
+    // A tap is an explicit choice; a pan is only exploratory.
+    if (message.type === 'linq-map-tap') {
+      selectionCallbackRef.current?.(next);
+      return;
+    }
     callbackRef.current(next);
-    selectionCallbackRef.current?.(next);
   };
 
   const focusCoordinate = (next: LocationCoordinates, zoom = 16) => {
@@ -238,7 +256,11 @@ export default function LocationSelectionMap({
     const onMessage = (event: MessageEvent) => {
       if (event.source !== webMapRef.current?.contentWindow) return;
       const message = event.data as MapMessage | undefined;
-      if (message?.type === 'linq-map-ready' || message?.type === 'linq-map-center') {
+      if (
+        message?.type === 'linq-map-ready' ||
+        message?.type === 'linq-map-center' ||
+        message?.type === 'linq-map-tap'
+      ) {
         applyCenterMessage(message);
       }
     };
@@ -292,8 +314,8 @@ export default function LocationSelectionMap({
         </View>
       )}
       <View pointerEvents="none" style={styles.hint}>
-        <Ionicons name="move" size={13} color={colors.textPrimary} />
-        <Text style={styles.hintText}>Move the map to choose an area</Text>
+        <Ionicons name="hand-left-outline" size={13} color={colors.textPrimary} />
+        <Text style={styles.hintText}>Tap the map to choose this spot</Text>
       </View>
       {onUseCurrentLocation && (
         <Pressable

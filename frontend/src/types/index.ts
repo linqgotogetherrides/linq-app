@@ -52,17 +52,24 @@ export interface SavedUserLocations {
   home?: SavedLocation;
   office?: SavedLocation;
   college?: SavedLocation;
+  /** User-named places the rider chose to keep. Reuses the same jsonb column. */
+  custom?: SavedLocation[];
   defaultPickup?: SavedLocation;
   defaultDrop?: SavedLocation;
 }
 
+/**
+ * Returned when the location selector hands a single chosen location back to
+ * the screen that opened it. Only one field is updated per selection, so
+ * changing the drop never disturbs a valid pickup.
+ */
 export interface LocationFlowResult {
   id: number;
   source: LocationFlowSource;
-  pickup: SavedLocation;
-  destination: SavedLocation;
-  distanceMeters?: number;
-  durationSeconds?: number;
+  field: 'pickup' | 'drop';
+  location: SavedLocation;
+  /** True when this place is not already in the rider's saved list. */
+  isNewPlace: boolean;
 }
 
 export interface User {

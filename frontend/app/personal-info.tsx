@@ -172,10 +172,13 @@ export default function PersonalInfo() {
 
     setLoading(true);
     try {
-      const { error } = await supabase.from('user_profiles').update({
+      // Gender is locked after sign-up, so it is only ever written by the
+      // one-time selector for accounts that have no value yet. Re-sending it
+      // on every save would risk clobbering it.
+      const genderChanged = gender !== (user?.gender ?? undefined);
+      const patch: Record<string, unknown> = {
         name: name.trim() || null,
         age: normalizedAge,
-        gender: gender || null,
         women_only_mode: gender === 'female' ? womenOnly : false,
         bio: bio.trim() || null,
         phone_number: normalizedPhone || null,
@@ -186,7 +189,10 @@ export default function PersonalInfo() {
         emergency_contact: normalizedEmergency || null,
         avatar_url: avatarUrl || null,
         verification_document: verificationDocument || null,
-      }).eq('id', user.id);
+      };
+      if (genderChanged) patch.gender = gender || null;
+
+      const { error } = await supabase.from('user_profiles').update(patch).eq('id', user.id);
 
       if (error) throw error;
 
@@ -262,29 +268,51 @@ export default function PersonalInfo() {
             testID="pi-age"
           />
 
+          {/* Gender is fixed at signup. Riders with no value on record (older
+              accounts created before this was enforced) get one chance to set
+              it; everyone else sees it read-only. */}
           <Text style={styles.label}>Gender</Text>
-          <View style={styles.genderRow}>
-            {GENDERS.map((option) => {
-              const selected = gender === option.value;
-              return (
-                <Pressable
-                  key={option.value}
-                  style={[styles.genderButton, selected && styles.genderButtonActive]}
-                  onPress={() => setGender(option.value)}
-                  testID={`pi-gender-${option.value}`}
-                >
-                  <Ionicons
-                    name={option.icon}
-                    size={20}
-                    color={selected ? colors.primary : colors.textSecondary}
-                  />
-                  <Text style={[styles.genderText, selected && styles.genderTextActive]}>
-                    {option.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          {gender ? (
+            <View style={styles.lockedRow} testID="pi-gender-locked">
+              <Ionicons
+                name={GENDERS.find((g) => g.value === gender)?.icon || 'person'}
+                size={18}
+                color={colors.textPrimary}
+              />
+              <Text style={styles.lockedText}>
+                {GENDERS.find((g) => g.value === gender)?.label || 'Not specified'}
+              </Text>
+              <Text style={styles.lockedNote}>Set at sign-up and cannot be changed</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.genderRow}>
+                {GENDERS.map((option) => {
+                  const selected = gender === option.value;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      style={[styles.genderButton, selected && styles.genderButtonActive]}
+                      onPress={() => setGender(option.value)}
+                      testID={`pi-gender-${option.value}`}
+                    >
+                      <Ionicons
+                        name={option.icon}
+                        size={20}
+                        color={selected ? colors.primary : colors.textSecondary}
+                      />
+                      <Text style={[styles.genderText, selected && styles.genderTextActive]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={styles.lockedHint}>
+                Choose this once — it cannot be changed later.
+              </Text>
+            </>
+          )}
 
           {gender === 'female' && (
             <View style={styles.preferenceRow}>
@@ -421,6 +449,21 @@ const styles = StyleSheet.create({
   phonePrefixText: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium, marginLeft: 4 },
   phoneTextInput: { flex: 1, paddingHorizontal: 0 },
   genderRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+  lockedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  lockedText: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium },
+  lockedNote: { flex: 1, textAlign: 'right', fontSize: 10, color: colors.textTertiary },
+  lockedHint: { fontSize: font.size.xs, color: colors.textSecondary, marginTop: -spacing.sm, marginBottom: spacing.lg },
   genderButton: {
     flex: 1,
     minHeight: 48,

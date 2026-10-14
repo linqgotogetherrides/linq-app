@@ -13,13 +13,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import LeafletMap from '@/src/components/LeafletMap';
+
 import LocationSelectionMap from '@/src/components/LocationSelectionMap';
-import PrimaryButton from '@/src/components/PrimaryButton';
 import { useApp } from '@/src/context/AppContext';
 import { useCurrentLocation } from '@/src/hooks/useCurrentLocation';
-import { fetchOSRMRoute } from '@/src/lib/routing/osrm';
-import type { OSRMRouteResponse } from '@/src/lib/routing/osrm';
+import {
+  DUPLICATE_LOCATION_MESSAGE,
+  excludeSameLocation,
+  isSameLocation,
+} from '@/src/lib/location/duplicateGuard';
+import { buildSavedPlaces } from '@/src/lib/location/savedPlaces';
 import {
   reverseGeocodeLocation,
   searchLocations,
@@ -28,54 +31,25 @@ import type {
   LocationCoordinates,
   LocationSuggestion,
 } from '@/src/services/locationService';
-import type {
-  LocationFlowSource,
-  SavedLocation,
-  SavedLocationType,
-} from '@/src/types';
-import { colors, font, radius, shadow, spacing } from '@/src/theme/tokens';
+import type { LocationFlowSource, SavedLocation } from '@/src/types';
+import { colors, font, radius, spacing } from '@/src/theme/tokens';
 
-type FlowStage =
-  | 'pickup'
-  | 'pickupType'
-  | 'dropChoice'
-  | 'drop'
-  | 'dropType'
-  | 'route';
+const DEFAULT_CENTER: LocationCoordinates = { latitude: 17.44, longitude: 78.38 };
 
-type Classification = SavedLocationType | 'not-now';
+type Field = 'pickup' | 'drop';
 
-const DEFAULT_CENTER: LocationCoordinates = {
-  latitude: 17.44,
-  longitude: 78.38,
+const COPY: Record<Field, { title: string; placeholder: string; hint: string }> = {
+  pickup: {
+    title: 'Choose Pickup Location',
+    placeholder: 'Search pickup location',
+    hint: 'Where should we pick you up?',
+  },
+  drop: {
+    title: 'Choose Drop Location',
+    placeholder: 'Search drop location',
+    hint: 'Where are you going?',
+  },
 };
-
-const CLASSIFICATIONS: {
-  key: Classification;
-  label: string;
-  icon: 'home-outline' | 'briefcase-outline' | 'school-outline' | 'time-outline';
-}[] = [
-  { key: 'home', label: 'Home', icon: 'home-outline' },
-  { key: 'office', label: 'Office', icon: 'briefcase-outline' },
-  { key: 'college', label: 'College', icon: 'school-outline' },
-  { key: 'not-now', label: 'Not now', icon: 'time-outline' },
-];
-
-function locationFromParams(
-  label?: string,
-  latitude?: string,
-  longitude?: string
-): SavedLocation | null {
-  const lat = Number(latitude);
-  const lng = Number(longitude);
-  if (!label?.trim() || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return {
-    label: label.trim(),
-    address: label.trim(),
-    latitude: lat,
-    longitude: lng,
-  };
-}
 
 function savedLocationFromSuggestion(suggestion: LocationSuggestion): SavedLocation {
   return {
@@ -87,86 +61,80 @@ function savedLocationFromSuggestion(suggestion: LocationSuggestion): SavedLocat
 }
 
 function coordinatesFrom(location: SavedLocation): LocationCoordinates {
-  return {
-    latitude: location.latitude,
-    longitude: location.longitude,
-  };
+  return { latitude: location.latitude, longitude: location.longitude };
 }
 
+/**
+ * Single-field location selector.
+ *
+ * Opens for exactly one field, applies the chosen location to that field, and
+ * returns straight to the screen that opened it. There is no combined
+ * pickup/drop screen, no confirmation page, and no route stage here — the
+ * optional "save this place" offer happens after returning, on the host screen.
+ */
 export default function RideLocationFlow() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     source?: LocationFlowSource;
-    entry?: 'pickup' | 'drop';
-    rideType?: 'daily' | 'planned';
-    pickup?: string;
-    pickupLatitude?: string;
-    pickupLongitude?: string;
+    field?: 'pickup' | 'drop';
+    /** Opposite field's current location, used for duplicate rejection. */
+    opponentAddress?: string;
+    opponentLatitude?: string;
+    opponentLongitude?: string;
   }>();
-  const {
-    user,
-    saveUserLocation,
-    setLocationFlowResult,
-  } = useApp();
+  const { user, setLocationFlowResult } = useApp();
   const {
     isLoading: isLocating,
     error: currentLocationError,
+    status: locationStatus,
     requestLocation: requestCurrentLocation,
   } = useCurrentLocation();
 
-  const source: LocationFlowSource = params.source === 'create-ride' ? 'create-ride' : 'home';
-  const isPlannedTrip = params.rideType === 'planned';
-  const savedDefaultPickup = user?.savedLocations?.defaultPickup;
-  const initialPickup = useMemo(
-    () => locationFromParams(params.pickup, params.pickupLatitude, params.pickupLongitude) || savedDefaultPickup || null,
-    [params.pickup, params.pickupLatitude, params.pickupLongitude, savedDefaultPickup]
-  );
-  const savedDefaultDrop = user?.savedLocations?.defaultDrop;
-  const savedPlaceOptions = useMemo(
-    () => [
-      { type: 'home' as const, place: user?.savedLocations?.home },
-      { type: 'office' as const, place: user?.savedLocations?.office },
-      { type: 'college' as const, place: user?.savedLocations?.college },
-    ].filter(
-      (entry): entry is { type: SavedLocationType; place: SavedLocation } => Boolean(entry.place)
-    ),
+  const field: Field = params.field === 'drop' ? 'drop' : 'pickup';
+  const copy = COPY[field];
+
+  const opponent = useMemo<SavedLocation | null>(() => {
+    const lat = Number(params.opponentLatitude);
+    const lng = Number(params.opponentLongitude);
+    if (!params.opponentAddress?.trim() || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return null;
+    }
+    return {
+      label: params.opponentAddress,
+      address: params.opponentAddress,
+      latitude: lat,
+      longitude: lng,
+    };
+  }, [params.opponentAddress, params.opponentLatitude, params.opponentLongitude]);
+
+  const savedPlaces = useMemo(
+    () => buildSavedPlaces(user?.savedLocations),
     [user?.savedLocations]
   );
 
-  const [stage, setStage] = useState<FlowStage>(() => {
-    if (params.entry === 'drop' && initialPickup) {
-      return savedDefaultDrop ? 'dropChoice' : 'drop';
-    }
-    return 'pickup';
-  });
-  const [pickup, setPickup] = useState<SavedLocation | null>(initialPickup);
-  const [destination, setDestination] = useState<SavedLocation | null>(null);
+  // The opposite field's location is never offered here.
+  const quickSelectOptions = useMemo(
+    () => excludeSameLocation(savedPlaces, opponent),
+    [opponent, savedPlaces]
+  );
+
   const [mapCoordinate, setMapCoordinate] = useState<LocationCoordinates>(
-    initialPickup ? coordinatesFrom(initialPickup) : DEFAULT_CENTER
+    opponent ? coordinatesFrom(opponent) : DEFAULT_CENTER
   );
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<LocationSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [resolvingLocation, setResolvingLocation] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const selectionRequestRef = useRef(0);
-  const [savingLocation, setSavingLocation] = useState(false);
-  const [route, setRoute] = useState<OSRMRouteResponse | null>(null);
-  const [routeLoading, setRouteLoading] = useState(false);
-  const [routeError, setRouteError] = useState<string | null>(null);
-  const [routeRequest, setRouteRequest] = useState(0);
-  const [dropBackTarget, setDropBackTarget] = useState<'pickup' | 'dropChoice' | null>(null);
 
-  const isSelectingPickup = stage === 'pickup';
-  const isSelectingDrop = stage === 'drop';
-  const activeProgress = stage === 'pickup' || stage === 'pickupType'
-    ? 'pickup'
-    : stage === 'route'
-      ? 'route'
-      : 'drop';
+  const locationPermissionBlocked =
+    locationStatus === 'permission_denied' || locationStatus === 'location_services_disabled';
+
+  // ---------------------------------------------------------------- search
 
   useEffect(() => {
-    if (!isSelectingPickup && !isSelectingDrop) return undefined;
     const normalized = query.trim();
     if (normalized.length < 3) {
       setSearchResults([]);
@@ -198,108 +166,78 @@ export default function RideLocationFlow() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [isSelectingDrop, isSelectingPickup, query]);
+  }, [query]);
 
-  const resetSearch = () => {
-    setQuery('');
-    setSearchResults([]);
-    setSearchError(null);
-  };
-
-  const handleMapCoordinateChange = useCallback((coordinate: LocationCoordinates) => {
-    setMapCoordinate(coordinate);
-
+  const resetSearch = useCallback(() => {
     setQuery('');
     setSearchResults([]);
     setSearchError(null);
   }, []);
 
-  const matchesSavedLocation = (location: SavedLocation) =>
-    savedPlaceOptions.some(({ place }) =>
-      Math.abs(place.latitude - location.latitude) < 0.0001 &&
-      Math.abs(place.longitude - location.longitude) < 0.0001
-    );
+  // ------------------------------------------------------------ committing
 
-  const continueAfterPickup = useCallback((selected: SavedLocation) => {
-    setPickup(selected);
-    setQuery('');
-    if (savedDefaultDrop) {
-      setStage('dropChoice');
-    } else {
-      setDropBackTarget('pickup');
-      setMapCoordinate(coordinatesFrom(selected));
+  const close = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/home');
+  }, [router]);
 
+  /**
+   * Applies a location to this field and returns to the host screen. A repeat
+   * of the opposite field is rejected and the existing selection is untouched.
+   */
+  const commit = useCallback(
+    (location: SavedLocation) => {
+      if (opponent && isSameLocation(location, opponent)) {
+        setDuplicateError(DUPLICATE_LOCATION_MESSAGE);
+        return;
+      }
+      setDuplicateError(null);
+      setLocationFlowResult({
+        id: Date.now(),
+        source: params.source === 'create-ride' ? 'create-ride' : 'home',
+        field,
+        location,
+        isNewPlace: !savedPlaces.some(({ place }) => isSameLocation(place, location)),
+      });
+      close();
+    },
+    [close, field, opponent, params.source, savedPlaces, setLocationFlowResult]
+  );
 
-      setSearchResults([]);
-      setStage('drop');
-    }
-  }, [savedDefaultDrop]);
-
-  const handlePickupSelection = (selected: SavedLocation, skipClassification = false) => {
-    if (skipClassification || isPlannedTrip || matchesSavedLocation(selected)) {
-      continueAfterPickup(selected);
-    } else {
-      setPickup(selected);
-      setStage('pickupType');
-    }
-  };
-
-  const handleDropSelection = (selected: SavedLocation, skipClassification = false) => {
-    setDestination(selected);
-    if (skipClassification || isPlannedTrip || matchesSavedLocation(selected)) {
-      setDropBackTarget(null);
-      setStage('route');
-    } else {
-      setDropBackTarget(null);
-      setStage('dropType');
-    }
-  };
-
-  const handleUseCurrentLocation = async (advance = false) => {
+  const handleUseCurrentLocation = useCallback(async () => {
     const current = await requestCurrentLocation({ showRationale: true });
     if (!current) return;
-    const selected: SavedLocation = {
+    commit({
       label: current.label,
       address: current.address || current.label,
       latitude: current.latitude,
       longitude: current.longitude,
-    };
-    setMapCoordinate({
-      latitude: current.latitude,
-      longitude: current.longitude,
-      accuracy: current.accuracy,
-      timestamp: current.timestamp,
     });
+  }, [commit, requestCurrentLocation]);
 
-    resetSearch();
+  const handleSearchResult = useCallback(
+    (suggestion: LocationSuggestion) => {
+      setMapCoordinate(suggestion.coordinates);
+      commit(savedLocationFromSuggestion(suggestion));
+    },
+    [commit]
+  );
 
-    if (advance) {
-      if (isSelectingPickup) {
-        handlePickupSelection(selected);
-      } else {
-        handleDropSelection(selected);
+  /** Reverse-geocodes a map tap. The request id discards stale lookups. */
+  const handleMapTap = useCallback(
+    async (coordinate: LocationCoordinates) => {
+      if (opponent && isSameLocation(coordinateToLocation(coordinate), opponent)) {
+        setDuplicateError(DUPLICATE_LOCATION_MESSAGE);
+        return;
       }
-    }
-  };
 
-  const selectSearchResult = (suggestion: LocationSuggestion) => {
-    const selected = savedLocationFromSuggestion(suggestion);
-    setMapCoordinate(suggestion.coordinates);
-    void selectResolvedLocation(suggestion.coordinates, selected);
-  };
-
-  const selectResolvedLocation = async (
-    coordinate: LocationCoordinates,
-    selected?: SavedLocation
-  ) => {
-    const requestId = ++selectionRequestRef.current;
-    setResolvingLocation(true);
-    try {
-      let location = selected;
-      if (!location) {
+      const requestId = ++selectionRequestRef.current;
+      setResolvingLocation(true);
+      setDuplicateError(null);
+      try {
+        let location: SavedLocation;
         try {
-          const result = await reverseGeocodeLocation(coordinate);
-          location = savedLocationFromSuggestion(result);
+          location = savedLocationFromSuggestion(await reverseGeocodeLocation(coordinate));
         } catch {
           location = {
             label: `Map location (${coordinate.latitude.toFixed(5)}, ${coordinate.longitude.toFixed(5)})`,
@@ -308,574 +246,208 @@ export default function RideLocationFlow() {
             longitude: coordinate.longitude,
           };
         }
+        // A newer tap or navigation happened while geocoding was in flight.
+        if (requestId !== selectionRequestRef.current) return;
+        commit(location);
+      } finally {
+        if (requestId === selectionRequestRef.current) setResolvingLocation(false);
       }
-
-      if (requestId !== selectionRequestRef.current || !location) return;
-      setMapCoordinate(coordinate);
-
-      resetSearch();
-      if (isSelectingPickup) {
-        handlePickupSelection(location);
-      } else {
-        handleDropSelection(location);
-      }
-    } finally {
-      if (requestId === selectionRequestRef.current) setResolvingLocation(false);
-    }
-  };
-
-  const handleMapLocationSelected = (coordinate: LocationCoordinates) => {
-    void selectResolvedLocation(coordinate);
-  };
-
-  const openDropSelection = useCallback((fromSavedChoice = false) => {
-    setDropBackTarget(fromSavedChoice ? 'dropChoice' : 'pickup');
-    setMapCoordinate(pickup ? coordinatesFrom(pickup) : DEFAULT_CENTER);
-
-
-    setQuery('');
-    setSearchResults([]);
-    setSearchError(null);
-    setStage('drop');
-  }, [pickup]);
-
-  const selectSavedPickup = (place: SavedLocation) => {
-    handlePickupSelection(place, true);
-  };
-
-  const selectSavedDrop = (place: SavedLocation) => {
-    handleDropSelection(place, true);
-    resetSearch();
-  };
-
-  const saveClassification = async (classification: Classification) => {
-    const role = stage === 'pickupType' ? 'pickup' : 'drop';
-    const location = role === 'pickup' ? pickup : destination;
-    if (!location) return;
-
-    setSavingLocation(true);
-    try {
-      if (classification !== 'not-now') {
-        await saveUserLocation(classification, location, role);
-      }
-
-      if (role === 'pickup') {
-        continueAfterPickup(location);
-      } else {
-        setStage('route');
-      }
-    } finally {
-      setSavingLocation(false);
-    }
-  };
-
-  useEffect(() => {
-    if (stage !== 'route' || !pickup || !destination) return undefined;
-    let active = true;
-    setRouteLoading(true);
-    setRouteError(null);
-    setRoute(null);
-
-    void fetchOSRMRoute(coordinatesFrom(pickup), coordinatesFrom(destination))
-      .then((result) => {
-        if (!active) return;
-        if (result.source !== 'road' || result.geometry.coordinates.length < 2) {
-          throw new Error('Actual road route unavailable');
-        }
-        setRoute(result);
-      })
-      .catch(() => {
-        if (active) {
-          setRouteError('We could not load the real road route. Check your connection and try again.');
-        }
-      })
-      .finally(() => {
-        if (active) setRouteLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [destination, pickup, routeRequest, stage]);
-
-  const goBack = () => {
-    switch (stage) {
-      case 'pickupType':
-        setStage('pickup');
-        break;
-      case 'dropChoice':
-        setStage('pickup');
-        break;
-      case 'dropType':
-        setStage('drop');
-        break;
-      case 'drop':
-        if (dropBackTarget) {
-          setStage(dropBackTarget);
-          setDropBackTarget(null);
-        } else if (router.canGoBack()) {
-          router.back();
-        } else {
-          router.replace(source === 'home' ? '/(tabs)/home' : '/create-ride');
-        }
-        break;
-      case 'route':
-        setStage(savedDefaultDrop ? 'dropChoice' : 'dropType');
-        break;
-      default:
-        if (router.canGoBack()) router.back();
-        else router.replace(source === 'home' ? '/(tabs)/home' : '/create-ride');
-    }
-  };
-
-  const completeFlow = () => {
-    if (!pickup || !destination || route?.source !== 'road') return;
-    setLocationFlowResult({
-      id: Date.now(),
-      source,
-      pickup,
-      destination,
-      distanceMeters: route.distance,
-      durationSeconds: route.duration,
-    });
-    if (router.canGoBack()) router.back();
-    else router.replace(source === 'home' ? '/(tabs)/home' : '/create-ride');
-  };
-
-  const renderProgress = () => {
-    const activeIndex = activeProgress === 'pickup' ? 0 : activeProgress === 'drop' ? 1 : 2;
-    return (
-      <View style={styles.progressRow} testID="location-flow-progress">
-        <View style={styles.progressTrack}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${(activeIndex / 2) * 100}%` },
-            ]}
-          />
-        </View>
-        {(['pickup', 'drop', 'route'] as const).map((item, index) => {
-          const complete = index < activeIndex;
-          const active = item === activeProgress;
-          return (
-            <View key={item} style={styles.progressItem}>
-              <View
-                style={[
-                  styles.progressDot,
-                  (active || complete) && styles.progressDotActive,
-                  active && styles.progressDotCurrent,
-                ]}
-              >
-                {complete ? (
-                  <Ionicons name="checkmark" size={11} color={colors.textInverse} />
-                ) : (
-                  <Text style={[styles.progressNumber, active && styles.progressNumberActive]}>
-                    {index + 1}
-                  </Text>
-                )}
-              </View>
-              <Text
-                style={[styles.progressLabel, active && styles.progressLabelActive]}
-                numberOfLines={1}
-              >
-                {item === 'pickup' ? 'Pickup' : item === 'drop' ? 'Drop' : 'Route'}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-    );
-  };
-
-  const renderSavedPlaces = (
-    options: { type: SavedLocationType; place: SavedLocation }[],
-    onSelect: (place: SavedLocation) => void,
-    showSearchAnother = true
-  ) => (
-    <View style={styles.savedSection}>
-      <Text style={styles.savedHeading}>Saved locations</Text>
-      <View style={styles.savedGrid}>
-        {options.map(({ type, place }) => {
-          const metadata = SAVED_PLACE_META[type];
-          return (
-            <Pressable
-              key={`${place.latitude},${place.longitude}`}
-              style={styles.savedPlace}
-              onPress={() => onSelect(place)}
-              testID={`saved-location-${metadata.key}`}
-            >
-              <View style={styles.savedIcon}>
-                <Ionicons name={metadata.icon} size={20} color={colors.primary} />
-              </View>
-              <View style={styles.savedCopy}>
-                <Text style={styles.savedLabel}>{metadata.label}</Text>
-                <Text style={styles.savedAddress} numberOfLines={1}>{place.label}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-            </Pressable>
-          );
-        })}
-      </View>
-      {showSearchAnother && (
-        <Pressable
-          style={styles.searchAnother}
-          onPress={() => {
-
-
-            setMapCoordinate(
-              stage === 'drop' && pickup ? coordinatesFrom(pickup) : DEFAULT_CENTER
-            );
-            resetSearch();
-          }}
-          testID="search-another-location"
-        >
-          <Ionicons name="search" size={18} color={colors.primary} />
-          <Text style={styles.searchAnotherText}>Search another location</Text>
-        </Pressable>
-      )}
-    </View>
+    },
+    [commit, opponent]
   );
 
-  const renderQuickLocationActions = (
-    purpose: 'pickup' | 'drop',
-    onSavedLocation: (place: SavedLocation) => void
-  ) => (
-    <View style={styles.quickActions}>
-      <Text style={styles.quickActionsLabel}>Quick select</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.quickActionsRow}
-      >
-        <Pressable
-          style={styles.quickAction}
-          onPress={() => handleUseCurrentLocation(true)}
-          disabled={isLocating}
-          testID={`${purpose}-quick-current-location`}
-        >
-          <View style={styles.quickActionIcon}>
-            {isLocating ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <Ionicons name="navigate" size={18} color={colors.primary} />
-            )}
-          </View>
-          <Text style={styles.quickActionText}>Current location</Text>
-        </Pressable>
-        {savedPlaceOptions.map(({ type, place }) => {
-          const metadata = SAVED_PLACE_META[type];
-          return (
-            <Pressable
-              key={`${purpose}-${type}`}
-              style={styles.quickAction}
-              onPress={() => onSavedLocation(place)}
-              testID={`${purpose}-quick-${metadata.key}`}
-            >
-              <View style={styles.quickActionIcon}>
-                <Ionicons name={metadata.icon} size={18} color={colors.primary} />
-              </View>
-              <Text style={styles.quickActionText}>{metadata.label}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
+  const handleMapCoordinateChange = useCallback((coordinate: LocationCoordinates) => {
+    setMapCoordinate(coordinate);
+  }, []);
 
-  const renderLocationSelection = () => {
-    const purpose = isSelectingPickup ? 'pickup' : 'drop';
-    return (
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {renderProgress()}
-        <Text style={styles.title}>
-          {isSelectingPickup ? 'Select your pickup' : 'Where are you going?'}
-        </Text>
-        <Text style={styles.subtitle}>
-          {isSelectingPickup
-            ? 'Search or move the map to choose where your ride starts.'
-            : 'Search or move the map to choose your destination.'}
-        </Text>
-
-        <LocationSelectionMap
-          key={`${stage}-${purpose}`}
-          coordinate={mapCoordinate}
-          onCoordinateChange={handleMapCoordinateChange}
-          onMapLocationSelected={handleMapLocationSelected}
-          onUseCurrentLocation={() => handleUseCurrentLocation(true)}
-          isLocating={isLocating}
-          height={230}
-        />
-
-        {renderQuickLocationActions(
-          purpose,
-          isSelectingPickup ? selectSavedPickup : selectSavedDrop
-        )}
-
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={19} color={colors.textTertiary} />
-          <TextInput
-            testID={`${purpose}-location-search`}
-            value={query}
-            onChangeText={setQuery}
-            placeholder={isSelectingPickup ? 'Search pickup location' : 'Search drop location'}
-            placeholderTextColor={colors.textTertiary}
-            style={styles.searchInput}
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-          {searching && <ActivityIndicator size="small" color={colors.primary} />}
-        </View>
-
-        {query.length >= 3 && (
-          <View style={styles.searchResults}>
-            {searchError ? (
-              <Text style={styles.errorText}>{searchError}</Text>
-            ) : searchResults.length > 0 ? (
-              searchResults.map((result) => (
-                <Pressable
-                  key={result.id}
-                  style={styles.searchResult}
-                  onPress={() => selectSearchResult(result)}
-                  testID={`${purpose}-result-${result.id}`}
-                >
-                  <Ionicons name="location" size={18} color={colors.primary} />
-                  <View style={styles.searchResultCopy}>
-                    <Text style={styles.searchResultName}>{result.name}</Text>
-                    <Text style={styles.searchResultAddress} numberOfLines={2}>
-                      {result.fullAddress}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))
-            ) : !searching ? (
-              <Text style={styles.noResults}>No matching locations found.</Text>
-            ) : null}
-            <Text style={styles.attribution}>Search and map data by OpenStreetMap</Text>
-          </View>
-        )}
-
-        {currentLocationError && <Text style={styles.errorText}>{currentLocationError}</Text>}
-
-        {resolvingLocation && (
-          <View style={styles.resolvingCard}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={styles.resolvingText}>Selecting location…</Text>
-          </View>
-        )}
-      </ScrollView>
-    );
-  };
-
-  const renderClassification = (role: 'pickup' | 'drop') => {
-    const location = role === 'pickup' ? pickup : destination;
-    return (
-      <ScrollView contentContainerStyle={styles.centeredContent} showsVerticalScrollIndicator={false}>
-        {renderProgress()}
-        <View style={styles.questionIcon}>
-          <Ionicons name={role === 'pickup' ? 'location' : 'flag'} size={28} color={colors.primary} />
-        </View>
-        <Text style={styles.questionTitle}>
-          Is this your Home, Office or College?
-        </Text>
-        <Text style={styles.questionLocation} numberOfLines={3}>{location?.address}</Text>
-        <Text style={styles.questionHint}>
-          Save it for faster pickup and drop selection next time.
-        </Text>
-
-        <View style={styles.classificationGrid}>
-          {CLASSIFICATIONS.map((option) => (
-            <Pressable
-              key={option.key}
-              style={styles.classificationButton}
-              onPress={() => void saveClassification(option.key)}
-              disabled={savingLocation}
-              testID={`save-${role}-${option.key}`}
-            >
-              <View style={styles.classificationIcon}>
-                <Ionicons name={option.icon} size={22} color={colors.primary} />
-              </View>
-              <Text style={styles.classificationText}>{option.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {savingLocation && <ActivityIndicator color={colors.primary} style={styles.saving} />}
-      </ScrollView>
-    );
-  };
-
-  const renderDropChoice = () => {
-    const choices = savedPlaceOptions.filter(
-      ({ place }) =>
-        !savedDefaultDrop ||
-        Math.abs(place.latitude - savedDefaultDrop.latitude) > 0.000001 ||
-        Math.abs(place.longitude - savedDefaultDrop.longitude) > 0.000001
-    );
-    return (
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {renderProgress()}
-        <Text style={styles.title}>Choose your drop</Text>
-        <Text style={styles.subtitle}>Use a saved place or choose a new destination.</Text>
-
-        {savedDefaultDrop && (
-          <Pressable
-            style={styles.defaultPlace}
-            onPress={() => selectSavedDrop(savedDefaultDrop)}
-            testID="saved-default-drop"
-          >
-            <View style={styles.defaultPlaceIcon}>
-              <Ionicons name="bookmark" size={22} color={colors.textInverse} />
-            </View>
-            <View style={styles.savedCopy}>
-              <Text style={styles.defaultPlaceLabel}>Default drop</Text>
-              <Text style={styles.defaultPlaceAddress} numberOfLines={2}>
-                {savedDefaultDrop.label}
-              </Text>
-            </View>
-            <Ionicons name="arrow-forward" size={18} color={colors.primary} />
-          </Pressable>
-        )}
-
-        {choices.length > 0 && renderSavedPlaces(choices, selectSavedDrop, false)}
-        <PrimaryButton
-          title="Search another drop location"
-          icon="search"
-          variant="secondary"
-          onPress={() => openDropSelection(true)}
-          testID="search-another-drop"
-        />
-      </ScrollView>
-    );
-  };
-
-  const renderRoute = () => {
-    if (!pickup || !destination) return null;
-    return (
-      <ScrollView contentContainerStyle={styles.routeContent} showsVerticalScrollIndicator={false}>
-        {renderProgress()}
-        <Text style={styles.title}>Your route is ready</Text>
-        <Text style={styles.subtitle}>The line follows real road geometry from OpenStreetMap routing.</Text>
-
-        <LeafletMap
-          pickup={coordinatesFrom(pickup)}
-          destination={coordinatesFrom(destination)}
-          driverRoute={route?.source === 'road' ? route.geometry : undefined}
-          allowStraightLineFallback={false}
-          pickupLabel={pickup.label}
-          destinationLabel={destination.label}
-          height={330}
-          showLocateButton={false}
-        />
-
-        <View style={styles.routeLocations}>
-          <View style={styles.routeLocationRow}>
-            <View style={[styles.routeDot, { backgroundColor: colors.primary }]} />
-            <View style={styles.routeLocationCopy}>
-              <Text style={styles.routeLocationLabel}>PICKUP</Text>
-              <Text style={styles.routeLocationText} numberOfLines={2}>{pickup.address}</Text>
-            </View>
-            <Pressable
-              onPress={() => {
-                setMapCoordinate(coordinatesFrom(pickup));
-
-
-                resetSearch();
-                setStage('pickup');
-              }}
-              hitSlop={8}
-            >
-              <Text style={styles.editText}>Edit</Text>
-            </Pressable>
-          </View>
-          <View style={styles.routeLocationRow}>
-            <View style={[styles.routeDot, styles.routeDropDot]} />
-            <View style={styles.routeLocationCopy}>
-              <Text style={styles.routeLocationLabel}>DROP</Text>
-              <Text style={styles.routeLocationText} numberOfLines={2}>{destination.address}</Text>
-            </View>
-            <Pressable
-              onPress={() => {
-                setMapCoordinate(coordinatesFrom(destination));
-
-
-                setDropBackTarget(savedDefaultDrop ? null : 'pickup');
-                resetSearch();
-                setStage(savedDefaultDrop ? 'dropChoice' : 'drop');
-              }}
-              hitSlop={8}
-            >
-              <Text style={styles.editText}>Edit</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {routeLoading ? (
-          <View style={styles.routeLoading}>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={styles.routeLoadingText}>Calculating the real road route…</Text>
-          </View>
-        ) : routeError ? (
-          <View style={styles.routeError}>
-            <Ionicons name="alert-circle" size={20} color={colors.error} />
-            <Text style={styles.routeErrorText}>{routeError}</Text>
-            <Pressable onPress={() => setRouteRequest((value) => value + 1)}>
-              <Text style={styles.retryText}>Retry</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        <PrimaryButton
-          testID="route-continue"
-          title="Continue"
-          disabled={!route || routeLoading}
-          onPress={completeFlow}
-        />
-      </ScrollView>
-    );
-  };
-
-  const screen = stage === 'pickup' || stage === 'drop'
-    ? renderLocationSelection()
-    : stage === 'pickupType'
-      ? renderClassification('pickup')
-      : stage === 'dropChoice'
-        ? renderDropChoice()
-        : stage === 'dropType'
-          ? renderClassification('drop')
-          : renderRoute();
+  const showResults = query.trim().length >= 3;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']} testID="ride-location-flow">
+    <SafeAreaView style={styles.container} edges={['top']} testID="ride-location-flow">
       <View style={styles.header}>
-        <Pressable style={styles.headerButton} onPress={goBack} hitSlop={10} testID="location-flow-back">
+        <Pressable
+          style={styles.headerButton}
+          onPress={close}
+          hitSlop={10}
+          testID="location-flow-back"
+          accessibilityLabel="Go back"
+        >
           <Ionicons name="arrow-back" size={21} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.headerTitle}>
-          {stage === 'route' ? 'Route preview' : isSelectingPickup ? 'Select pickup' : isSelectingDrop ? 'Select drop' : 'Plan your ride'}
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {copy.title}
         </Text>
         <View style={styles.headerButton} />
       </View>
+
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {screen}
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.hintRow}>
+            <Ionicons
+              name={field === 'pickup' ? 'radio-button-on' : 'flag'}
+              size={14}
+              color={field === 'pickup' ? colors.primary : colors.error}
+            />
+            <Text style={styles.hintText}>{copy.hint}</Text>
+          </View>
+
+          {duplicateError && (
+            <View style={styles.alert} testID="duplicate-error">
+              <Ionicons name="alert-circle" size={18} color={colors.error} />
+              <Text style={styles.alertText}>{duplicateError}</Text>
+            </View>
+          )}
+
+          {/* Search */}
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={19} color={colors.textTertiary} />
+            <TextInput
+              testID="location-search"
+              value={query}
+              onChangeText={setQuery}
+              placeholder={copy.placeholder}
+              placeholderTextColor={colors.textTertiary}
+              style={styles.searchInput}
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {searching && <ActivityIndicator size="small" color={colors.primary} />}
+            {!!query && !searching && (
+              <Pressable onPress={resetSearch} hitSlop={10} testID="search-clear">
+                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+              </Pressable>
+            )}
+          </View>
+
+          {showResults && (
+            <View style={styles.searchResults}>
+              {searchError ? (
+                <Text style={styles.noResults}>{searchError}</Text>
+              ) : searchResults.length > 0 ? (
+                searchResults.map((result) => (
+                  <Pressable
+                    key={result.id}
+                    style={styles.searchResult}
+                    onPress={() => handleSearchResult(result)}
+                    testID={`result-${result.id}`}
+                  >
+                    <Ionicons name="location" size={18} color={colors.primary} />
+                    <View style={styles.searchResultCopy}>
+                      <Text style={styles.searchResultName}>{result.name}</Text>
+                      <Text style={styles.searchResultAddress} numberOfLines={2}>
+                        {result.fullAddress}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))
+              ) : !searching ? (
+                <Text style={styles.noResults}>No matching locations found.</Text>
+              ) : null}
+            </View>
+          )}
+
+          {/* Quick selects */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.quickRow}
+            testID="quick-selects"
+          >
+            <Pressable
+              style={styles.quickChip}
+              onPress={handleUseCurrentLocation}
+              disabled={isLocating}
+              testID="quick-current-location"
+              accessibilityLabel="Use my current location"
+            >
+              <View style={styles.quickChipIcon}>
+                {isLocating ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons name="navigate" size={17} color={colors.primary} />
+                )}
+              </View>
+              <Text style={styles.quickChipText}>Current location</Text>
+            </Pressable>
+
+            {quickSelectOptions.map(({ kind, place, displayLabel }) => (
+              <Pressable
+                key={`${kind}-${place.latitude},${place.longitude}`}
+                style={styles.quickChip}
+                onPress={() => commit(place)}
+                testID={`quick-${place.label}`}
+                accessibilityLabel={`Use saved place ${displayLabel}`}
+              >
+                <View style={styles.quickChipIcon}>
+                  <Ionicons name={SAVED_PLACE_ICON[kind] || 'bookmark-outline'} size={17} color={colors.primary} />
+                </View>
+                <Text style={styles.quickChipText} numberOfLines={1}>
+                  {displayLabel}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          {savedPlaces.length === 0 && (
+            <Text style={styles.emptyHint}>
+              No saved places yet. Search or tap the map — you can save the place afterwards if
+              you want.
+            </Text>
+          )}
+
+          {/* Map */}
+          <View style={styles.mapBlock}>
+            <LocationSelectionMap
+              coordinate={mapCoordinate}
+              onCoordinateChange={handleMapCoordinateChange}
+              onMapLocationSelected={(coordinate) => void handleMapTap(coordinate)}
+              onUseCurrentLocation={handleUseCurrentLocation}
+              isLocating={isLocating}
+              height={260}
+            />
+            <Text style={styles.attribution}>Search and map data by OpenStreetMap</Text>
+          </View>
+
+          {resolvingLocation && (
+            <View style={styles.resolvingCard} testID="resolving-location">
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.resolvingText}>Resolving address…</Text>
+            </View>
+          )}
+
+          {currentLocationError && <Text style={styles.errorText}>{currentLocationError}</Text>}
+          {locationPermissionBlocked && !currentLocationError && (
+            <Text style={styles.errorText}>
+              Location access is off. You can still search for a place or tap the map.
+            </Text>
+          )}
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const SAVED_PLACE_META: Record<
-  SavedLocationType,
-  { key: SavedLocationType; label: string; icon: 'home-outline' | 'briefcase-outline' | 'school-outline' }
-> = {
-  home: { key: 'home', label: 'Home', icon: 'home-outline' },
-  office: { key: 'office', label: 'Office', icon: 'briefcase-outline' },
-  college: { key: 'college', label: 'College', icon: 'school-outline' },
+function coordinateToLocation(coordinate: LocationCoordinates): SavedLocation {
+  return {
+    label: `${coordinate.latitude.toFixed(5)}, ${coordinate.longitude.toFixed(5)}`,
+    address: `${coordinate.latitude.toFixed(6)}, ${coordinate.longitude.toFixed(6)}`,
+    latitude: coordinate.latitude,
+    longitude: coordinate.longitude,
+  };
+}
+
+const SAVED_PLACE_ICON: Record<string, 'home-outline' | 'briefcase-outline' | 'school-outline'> = {
+  home: 'home-outline',
+  office: 'briefcase-outline',
+  college: 'school-outline',
 };
 
 const styles = StyleSheet.create({
@@ -892,61 +464,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   headerButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.bold },
-  content: { padding: spacing.xl, paddingBottom: 36 },
-  centeredContent: {
-    flexGrow: 1,
-    padding: spacing.xl,
-    paddingBottom: 36,
-    justifyContent: 'center',
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: font.size.base,
+    color: colors.textPrimary,
+    fontWeight: font.weight.bold,
   },
-  routeContent: { padding: spacing.xl, paddingBottom: 36 },
+  content: { padding: spacing.lg, paddingBottom: spacing['2xl'], gap: spacing.md },
 
-  progressRow: {
-    position: 'relative',
-    width: '100%',
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xl,
-  },
-  progressTrack: {
-    position: 'absolute',
-    top: 14,
-    left: 36,
-    right: 36,
-    height: 2,
-    backgroundColor: colors.border,
-  },
-  progressFill: { height: 2, backgroundColor: colors.primary },
-  progressItem: { width: 72, minWidth: 0, alignItems: 'center' },
-  progressDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  progressDotActive: { borderColor: colors.primary, backgroundColor: colors.primary },
-  progressDotCurrent: { backgroundColor: colors.primaryLight },
-  progressNumber: { fontSize: 11, color: colors.textTertiary, fontWeight: font.weight.bold },
-  progressNumberActive: { color: colors.primary },
-  progressLabel: { marginTop: 5, fontSize: 10, color: colors.textTertiary, fontWeight: font.weight.medium },
-  progressLabelActive: { color: colors.primary, fontWeight: font.weight.bold },
-
-  title: { fontSize: font.size['2xl'], color: colors.textPrimary, fontWeight: font.weight.bold, lineHeight: 32 },
-  subtitle: { marginTop: spacing.xs, marginBottom: spacing.lg, fontSize: font.size.sm, color: colors.textSecondary, lineHeight: 20 },
-
-  quickActions: { marginTop: spacing.lg },
-  quickActionsLabel: { marginBottom: spacing.sm, color: colors.textSecondary, fontSize: font.size.xs, fontWeight: font.weight.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
-  quickActionsRow: { gap: spacing.sm, paddingRight: spacing.lg },
-  quickAction: { minWidth: 92, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface },
-  quickActionIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: colors.primaryLight },
-  quickActionText: { color: colors.textPrimary, fontSize: font.size.xs, fontWeight: font.weight.medium },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  hintText: { fontSize: font.size.sm, color: colors.textSecondary },
 
   searchBox: {
     height: 50,
@@ -954,7 +482,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
-    marginTop: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
@@ -962,7 +489,6 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, height: 48, color: colors.textPrimary, fontSize: font.size.base },
   searchResults: {
-    marginTop: spacing.sm,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
@@ -982,90 +508,61 @@ const styles = StyleSheet.create({
   searchResultCopy: { flex: 1 },
   searchResultName: { color: colors.textPrimary, fontSize: font.size.sm, fontWeight: font.weight.medium },
   searchResultAddress: { marginTop: 2, color: colors.textSecondary, fontSize: font.size.xs, lineHeight: 16 },
-  attribution: { padding: 6, textAlign: 'right', color: colors.textTertiary, fontSize: 9 },
   noResults: { padding: spacing.md, textAlign: 'center', color: colors.textSecondary, fontSize: font.size.sm },
-  errorText: { marginTop: spacing.sm, color: colors.error, fontSize: font.size.xs, lineHeight: 17 },
 
-  savedSection: { marginTop: spacing.lg },
-  savedHeading: { marginBottom: spacing.sm, color: colors.textSecondary, fontSize: font.size.xs, fontWeight: font.weight.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
-  savedGrid: { gap: spacing.sm },
-  savedPlace: {
-    minHeight: 58,
+  quickRow: { gap: spacing.sm, paddingRight: spacing.lg, paddingVertical: 2 },
+  quickChip: {
+    minHeight: 48,
+    maxWidth: 190,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.sm,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     backgroundColor: colors.surface,
   },
-  savedIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: colors.primaryLight },
-  savedCopy: { flex: 1 },
-  savedLabel: { color: colors.textPrimary, fontSize: font.size.sm, fontWeight: font.weight.bold },
-  savedAddress: { marginTop: 2, color: colors.textSecondary, fontSize: font.size.xs },
-  searchAnother: {
-    minHeight: 50,
-    flexDirection: 'row',
+  quickChipIcon: {
+    width: 30,
+    height: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.primary,
-    borderRadius: radius.md,
+    borderRadius: 15,
+    backgroundColor: colors.primaryLight,
   },
-  searchAnotherText: { color: colors.primary, fontSize: font.size.base, fontWeight: font.weight.medium },
+  quickChipText: {
+    flexShrink: 1,
+    color: colors.textPrimary,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.medium,
+  },
+  emptyHint: { fontSize: font.size.xs, color: colors.textSecondary, lineHeight: 17 },
+
+  mapBlock: { gap: 4 },
+  attribution: { textAlign: 'right', color: colors.textTertiary, fontSize: 9 },
+
+  alert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: radius.md,
+    backgroundColor: colors.errorLight,
+  },
+  alertText: { flex: 1, color: colors.error, fontSize: font.size.xs, lineHeight: 17 },
+  errorText: { color: colors.error, fontSize: font.size.xs, lineHeight: 17 },
 
   resolvingCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    marginTop: spacing.lg,
     padding: spacing.md,
     borderRadius: radius.md,
     backgroundColor: colors.primaryLight,
   },
   resolvingText: { color: colors.primary, fontSize: font.size.sm, fontWeight: font.weight.medium },
-
-  questionIcon: { width: 58, height: 58, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', borderRadius: 29, backgroundColor: colors.primaryLight },
-  questionTitle: { marginTop: spacing.lg, textAlign: 'center', color: colors.textPrimary, fontSize: font.size.xl, lineHeight: 30, fontWeight: font.weight.bold },
-  questionLocation: { marginTop: spacing.md, textAlign: 'center', color: colors.primary, fontSize: font.size.sm, lineHeight: 20 },
-  questionHint: { marginTop: spacing.sm, textAlign: 'center', color: colors.textSecondary, fontSize: font.size.sm, lineHeight: 20 },
-  classificationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing['2xl'] },
-  classificationButton: { width: '46%', minHeight: 94, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, ...shadow.sm },
-  classificationIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: colors.primaryLight },
-  classificationText: { color: colors.textPrimary, fontSize: font.size.base, fontWeight: font.weight.medium },
-  saving: { marginTop: spacing.lg },
-
-  defaultPlace: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-    padding: spacing.lg,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primaryLight,
-  },
-  defaultPlaceIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, backgroundColor: colors.primary },
-  defaultPlaceLabel: { color: colors.primary, fontSize: font.size.xs, fontWeight: font.weight.bold, textTransform: 'uppercase' },
-  defaultPlaceAddress: { marginTop: 2, color: colors.textPrimary, fontSize: font.size.base, fontWeight: font.weight.medium },
-
-  routeLocations: { marginTop: spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface },
-  routeLocationRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  routeDot: { width: 12, height: 12, borderRadius: 6 },
-  routeDropDot: { borderRadius: 2, backgroundColor: colors.error },
-  routeLocationCopy: { flex: 1 },
-  routeLocationLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: font.weight.bold, letterSpacing: 0.5 },
-  routeLocationText: { marginTop: 3, color: colors.textPrimary, fontSize: font.size.sm, lineHeight: 18 },
-  editText: { color: colors.primary, fontSize: font.size.sm, fontWeight: font.weight.medium },
-  routeLoading: { minHeight: 72, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.md, marginVertical: spacing.lg, borderRadius: radius.md, backgroundColor: colors.surface },
-  routeLoadingText: { color: colors.textSecondary, fontSize: font.size.sm },
-  routeError: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginVertical: spacing.lg, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.errorLight },
-  routeErrorText: { flex: 1, color: colors.error, fontSize: font.size.xs, lineHeight: 17 },
-  retryText: { color: colors.error, fontSize: font.size.sm, fontWeight: font.weight.bold, textTransform: 'uppercase' },
 });

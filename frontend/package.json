@@ -9,7 +9,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "node --test --experimental-strip-types src/lib/location/__tests__/duplicateGuard.test.ts src/lib/location/__tests__/savedPlaces.test.ts src/lib/location/__tests__/fieldIsolation.test.ts"
   },
   "dependencies": {
     "@expo/metro-runtime": "6.1.2",
