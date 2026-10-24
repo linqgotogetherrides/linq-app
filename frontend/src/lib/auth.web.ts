@@ -18,3 +18,14 @@ export const signOut = async () => {};
  * web bundle never imports @react-native-firebase/auth.
  */
 export const getIdToken = async (_forceRefresh = false): Promise<string | null> => null;
+
+/**
+ * False, deliberately and honestly.
+ *
+ * The stub above accepts any OTP without sending one and returns a synthetic
+ * `web-uid-<phone>` that no server can verify. There is no Firebase web SDK in
+ * this project's dependencies, so there is no real identity to present. Features
+ * gated on a verified identity (Cashfree KYC) must refuse here rather than send
+ * the anon key and look like they worked.
+ */
+export const supportsFirebaseIdentity = (): boolean => false;

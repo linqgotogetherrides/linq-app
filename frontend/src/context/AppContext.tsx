@@ -438,20 +438,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    */
   React.useEffect(() => {
     let cancelled = false;
+
     (async () => {
-      const storedUid = await readSession();
-      if (!storedUid) {
+      try {
+        const storedUid = await readSession();
+        if (!storedUid) return;
+
+        await fetchUserProfile(storedUid);
+        if (cancelled) return;
+
+        if (!userRef.current) {
+          await clearSession();
+        }
+      } catch (error) {
+        console.warn('Session restore failed:', error);
+      } finally {
         if (!cancelled) setBooting(false);
-        return;
       }
-      await fetchUserProfile(storedUid);
-      if (cancelled) return;
-      if (!userRef.current) {
-        // The row is gone or unreadable. Do not leave a dead id behind.
-        await clearSession();
-      }
-      setBooting(false);
     })();
+
     return () => {
       cancelled = true;
     };

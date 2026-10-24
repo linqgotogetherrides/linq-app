@@ -38,3 +38,6 @@ export const getIdToken = async (forceRefresh = false): Promise<string | null> =
     return null;
   }
 };
+
+/** Native is the build where Firebase actually issues tokens. */
+export const supportsFirebaseIdentity = (): boolean => true;

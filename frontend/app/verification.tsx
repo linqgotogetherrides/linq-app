@@ -2,12 +2,18 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { supabase } from '@/src/lib/supabase';
 import { useApp } from '@/src/context/AppContext';
 import LinqLogo from '@/src/components/LinqLogo';
 import PrimaryButton from '@/src/components/PrimaryButton';
+import VerificationUnavailableModal from '@/src/components/VerificationUnavailableModal';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
+import {
+  PAN_PAGE_ROUTE,
+  actionForDocument,
+  type UnavailableDocType,
+} from '@/src/lib/verificationOptions';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 import type { VerificationDocument } from '@/src/types';
 
@@ -22,16 +28,52 @@ export default function Verification() {
   const { uid } = useLocalSearchParams<{ uid: string }>();
   const { user, fetchUserProfile, showToast } = useApp();
   const [selected, setSelected] = useState<VerificationDocument>(user?.verificationDocument || 'aadhaar');
+  const [unavailableDoc, setUnavailableDoc] = useState<UnavailableDocType | null>(null);
   const [loading, setLoading] = useState(false);
+
+  /**
+   * Tapping an option shows what it does.
+   *
+   * Aadhaar and driving licence are not offered right now, so their tap opens
+   * the truthful "currently unavailable" sheet instead of being selectable as
+   * if verification could follow. PAN stays selectable and, like before, the
+   * rider's choice is only recorded after they press Continue.
+   */
+  const handleOptionPress = (key: VerificationDocument) => {
+    const action = actionForDocument(key);
+    if (!action) return;
+    if (action.type === 'show_unavailable') {
+      setUnavailableDoc(action.docType);
+      return;
+    }
+    setSelected(key);
+  };
 
   const handleContinue = async () => {
     if (!uid) {
       router.replace('/(tabs)/home');
       return;
     }
-    
+
     try {
       setLoading(true);
+      // Never overwrite a verification the backend has already confirmed. The
+      // client-side write below may only move an unverified account to
+      // 'pending'; the reverse -- pressing Continue after the hosted PAN flow
+      // was completed during signup -- would let this screen mark a rider
+      // unverified that Cashfree's webhook marked verified.
+      const { data: current, error: readError } = await supabase
+        .from('user_profiles')
+        .select('verification_status')
+        .eq('id', uid)
+        .maybeSingle();
+      if (!readError && current?.verification_status === 'verified') {
+        await fetchUserProfile(uid);
+        showToast('Your account is already verified!');
+        router.replace('/(tabs)/home');
+        return;
+      }
+
       const { error } = await supabase.from('user_profiles').update({
         verification_status: 'pending',
         verification_document: selected,
@@ -73,7 +115,7 @@ export default function Verification() {
             <Pressable
               key={o.key}
               testID={`verify-option-${o.key}`}
-              onPress={() => setSelected(o.key)}
+              onPress={() => handleOptionPress(o.key)}
               style={[styles.option, selected === o.key && styles.optionActive]}
             >
               <View style={[styles.optionIcon, { backgroundColor: o.bg }]}>
@@ -106,6 +148,16 @@ export default function Verification() {
 
         <Mission1000Banner />
       </ScrollView>
+
+      <VerificationUnavailableModal
+        visible={unavailableDoc !== null}
+        docType={unavailableDoc}
+        onVerifyWithPan={() => {
+          setUnavailableDoc(null);
+          router.push(PAN_PAGE_ROUTE as Href);
+        }}
+        onSkip={() => setUnavailableDoc(null)}
+      />
     </SafeAreaView>
   );
 }

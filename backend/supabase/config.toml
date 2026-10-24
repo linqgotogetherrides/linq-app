@@ -4,6 +4,26 @@
 # working directory name when running `supabase init`.
 project_id = "backend"
 
+# -----------------------------------------------------------------------------
+# Per-function settings.
+#
+# No function had an entry here until now, so every one of them fell back to the
+# platform default of verify_jwt = true. That is correct for the functions the
+# mobile client calls, because those send a user JWT. It is wrong for this one.
+#
+# Cashfree signs its webhooks with its own client secret and has no way to
+# present a Supabase JWT, so with verify_jwt = true the platform rejects every
+# delivery with 401 before the handler runs, and the handler's own HMAC check
+# never gets a chance to matter. Turning the platform check off hands
+# authentication to the handler, which verifies the signature itself. That is
+# the arrangement Supabase documents for external providers that sign the body.
+#
+# Editing this file does NOT change the hosted function. To apply it there,
+# deploy with:  supabase functions deploy kyc-webhook --no-verify-jwt
+# -----------------------------------------------------------------------------
+[functions.kyc-webhook]
+verify_jwt = false
+
 [api]
 enabled = true
 # Port to use for the API URL.
