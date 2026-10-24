@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  getSearchErrorMessage,
   LocationSuggestion,
   searchLocations,
 } from '@/src/services/locationService';
@@ -61,7 +62,7 @@ export default function LocationAutocomplete({
         if (active) {
           setSuggestions([]);
           if ((error as { name?: string })?.name !== 'AbortError') {
-            setSearchError('Location search is unavailable. Check your connection and try again.');
+            setSearchError(getSearchErrorMessage(error));
           }
         }
       } finally {

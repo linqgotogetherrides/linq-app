@@ -65,6 +65,40 @@ export type CurrentLocationErrorCode =
   | 'unavailable'
   | 'timeout';
 
+/**
+ * Error thrown when Nominatim could not answer a search. Its message is
+ * user-facing; callers show it verbatim when they can, so keep the wording in
+ * mind when editing.
+ */
+export class LocationSearchUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LocationSearchUnavailableError';
+  }
+}
+
+/**
+ * Nominatim's usage policy requires every request to carry an identifying
+ * User-Agent (https://operations.osmfoundation.org/policies/nominatim/).
+ * Requests with no User-Agent, or the default one from Android's HTTP stack
+ * ("okhttp/x.x"), are rejected with 403 "Access denied" — which is why location
+ * autocomplete produced no suggestions on devices until the app started
+ * sending this header. Browsers ignore a custom User-Agent (it is a forbidden
+ * fetch header), which is fine: a browser UA already identifies the client.
+ */
+const NOMINATIM_USER_AGENT = 'Linq/1.0 (carpool ride-matching mobile app)';
+const NOMINATIM_HEADERS: Record<string, string> = {
+  Accept: 'application/json',
+  'Accept-Language': 'en',
+  'User-Agent': NOMINATIM_USER_AGENT,
+};
+
+/** Maps a failed autocomplete request to the message the rider should see. */
+export function getSearchErrorMessage(error: unknown): string {
+  if (error instanceof LocationSearchUnavailableError) return error.message;
+  return 'Location search is unavailable. Check your connection and try again.';
+}
+
 type NominatimPlace = {
   place_id?: number;
   lat?: string;
@@ -560,26 +594,62 @@ export async function searchLocations(query: string, signal?: AbortSignal): Prom
   const abortFromCaller = () => controller.abort();
   if (signal?.aborted) controller.abort();
   else signal?.addEventListener('abort', abortFromCaller, { once: true });
-  const timeout = setTimeout(() => controller.abort(), 10_000);
 
-  let places: NominatimPlace[];
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    // The caller did not cancel; the request is just too slow. Distinguishing
+    // this from a caller abort lets the rider see an error instead of an
+    // empty "no results" list.
+    timedOut = true;
+    controller.abort();
+  }, 10_000);
+
+  let response: Response;
   try {
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+    response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
       signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        'Accept-Language': 'en',
-      },
+      headers: NOMINATIM_HEADERS,
     });
-
-    if (!response.ok) {
-      throw new Error(`Location search failed with status ${response.status}`);
+  } catch (error) {
+    if (timedOut && !signal?.aborted && (error as { name?: string })?.name === 'AbortError') {
+      throw new LocationSearchUnavailableError(
+        'Location search took too long. Check your connection and try again.'
+      );
     }
-
-    places = (await response.json()) as NominatimPlace[];
+    throw error;
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener('abort', abortFromCaller);
+  }
+
+  if (response.status === 403) {
+    throw new LocationSearchUnavailableError(
+      'OpenStreetMap blocked this search. Try again in a moment.'
+    );
+  }
+  if (response.status === 429 || response.status === 503) {
+    throw new LocationSearchUnavailableError(
+      'Too many location searches right now. Pause a few seconds and try again.'
+    );
+  }
+  if (!response.ok) {
+    throw new LocationSearchUnavailableError(
+      `Location search failed (error ${response.status}). Try again in a moment.`
+    );
+  }
+
+  let places: NominatimPlace[];
+  try {
+    places = (await response.json()) as NominatimPlace[];
+  } catch {
+    throw new LocationSearchUnavailableError(
+      'Location search returned a malformed response. Try again in a moment.'
+    );
+  }
+  if (!Array.isArray(places)) {
+    throw new LocationSearchUnavailableError(
+      'Location search returned a malformed response. Try again in a moment.'
+    );
   }
 
   const results = places.flatMap((place, index) => {
@@ -659,22 +729,44 @@ export async function reverseGeocodeLocation(
   const abortFromCaller = () => controller.abort();
   if (signal?.aborted) controller.abort();
   else signal?.addEventListener('abort', abortFromCaller, { once: true });
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 10_000);
 
   try {
     const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, {
       signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        'Accept-Language': 'en',
-      },
+      headers: NOMINATIM_HEADERS,
     });
+    if (response.status === 403) {
+      throw new LocationSearchUnavailableError('OpenStreetMap rejected this address lookup.');
+    }
+    if (response.status === 429 || response.status === 503) {
+      throw new LocationSearchUnavailableError(
+        'Too many address lookups right now. Pause a few seconds and try again.'
+      );
+    }
     if (!response.ok) {
-      throw new Error(`Reverse geocoding failed with status ${response.status}`);
+      throw new LocationSearchUnavailableError(
+        `Reverse geocoding failed (error ${response.status}).`
+      );
     }
 
-    const place = (await response.json()) as NominatimPlace;
-    const fullAddress = place.display_name?.trim();
+    let place: NominatimPlace;
+    try {
+      place = (await response.json()) as NominatimPlace;
+    } catch (error) {
+      if (timedOut && !signal?.aborted && (error as { name?: string })?.name === 'AbortError') {
+        throw new LocationSearchUnavailableError(
+          'Reverse geocoding took too long. Check your connection and try again.'
+        );
+      }
+      throw new LocationSearchUnavailableError('Reverse geocoding returned a malformed response.');
+    }
+    const fullAddress = place?.display_name?.trim();
     if (!fullAddress) throw new Error('No address found for these coordinates');
 
     const parts = fullAddress.split(',').map((part) => part.trim());

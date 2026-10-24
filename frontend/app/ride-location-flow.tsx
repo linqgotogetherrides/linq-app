@@ -24,6 +24,7 @@ import {
 } from '@/src/lib/location/duplicateGuard';
 import { buildSavedPlaces } from '@/src/lib/location/savedPlaces';
 import {
+  getSearchErrorMessage,
   reverseGeocodeLocation,
   searchLocations,
 } from '@/src/services/locationService';
@@ -154,7 +155,7 @@ export default function RideLocationFlow() {
       } catch (error) {
         if (active && (error as { name?: string })?.name !== 'AbortError') {
           setSearchResults([]);
-          setSearchError('Location search is unavailable. Check your connection and try again.');
+          setSearchError(getSearchErrorMessage(error));
         }
       } finally {
         if (active) setSearching(false);

@@ -3,7 +3,7 @@ import { Modal, View, Text, StyleSheet, TextInput, Pressable, FlatList, Activity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useCurrentLocation } from '@/src/hooks/useCurrentLocation';
-import { LocationCoordinates, searchLocations } from '@/src/services/locationService';
+import { getSearchErrorMessage, LocationCoordinates, searchLocations } from '@/src/services/locationService';
 import LocationStatusBadge from '@/src/components/LocationStatusBadge';
 import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
@@ -84,7 +84,7 @@ export default function LocationPickerModal({ visible, title = 'Choose location'
     } catch (error) {
       if ((error as { name?: string })?.name !== 'AbortError') {
         setResults([]);
-        setSearchError('Location search is unavailable. Check your connection and try again.');
+        setSearchError(getSearchErrorMessage(error));
       }
     } finally {
       if (searchAbortRef.current === controller) {
