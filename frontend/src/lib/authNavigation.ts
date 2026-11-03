@@ -41,6 +41,21 @@ export function isPublicRoute(pathname: string): boolean {
 }
 
 /**
+ * Screens a guest is allowed to see before signing in.
+ *
+ * Guests land on Home so they can preview the product, but the screen masks
+ * other riders' data and every action asks them to create an account. Expo
+ * Router exposes grouped routes without the group name, so both spellings are
+ * accepted.
+ */
+export const GUEST_ROUTES = new Set(['/home', '/(tabs)/home']);
+
+export function isGuestRoute(pathname: string): boolean {
+  const clean = pathname.replace(/\/+$/, '') || '/';
+  return GUEST_ROUTES.has(clean);
+}
+
+/**
  * Validates a `next` destination.
  *
  * Only same-app absolute paths are accepted. Anything else is discarded so a

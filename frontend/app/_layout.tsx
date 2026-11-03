@@ -15,6 +15,7 @@ import { SosAdminProvider } from '@/src/context/SosAdminContext';
 import { GameProvider } from '@/src/context/GameContext';
 import Toast from '@/src/components/Toast';
 import AuthGate from '@/src/components/AuthGate';
+import GuestLoginPrompt from '@/src/components/GuestLoginPrompt';
 
 LogBox.ignoreAllLogs(true);
 
@@ -51,6 +52,7 @@ export default function RootLayout() {
                   <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
                   <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FFFFFF' } }} />
                   <Toast />
+                  <GuestLoginPrompt />
                 </SosAdminProvider>
               </SosProvider>
             </GameProvider>

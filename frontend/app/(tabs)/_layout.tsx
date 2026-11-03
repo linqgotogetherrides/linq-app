@@ -8,14 +8,15 @@ import { withNext } from '@/src/lib/authNavigation';
 
 function CenterTabButton() {
   const router = useRouter();
-  const { user } = useApp();
+  const { user, guestMode, promptLogin } = useApp();
 
   return (
     <Pressable
       testID="tab-create"
       onPress={() => {
         if (!user) {
-          router.push('/onboarding');
+          if (guestMode) promptLogin();
+          else router.push('/onboarding');
         } else {
           router.push('/create-ride');
         }
@@ -29,19 +30,31 @@ function CenterTabButton() {
 
 export default function TabsLayout() {
   const router = useRouter();
-  const { user, booting } = useApp();
+  const { user, booting, guestMode, promptLogin } = useApp();
   const segments = useSegments();
 
   // Second line of defence behind AuthGate. The whole tab group is one
   // navigation surface, so a guest who reaches it by any route is turned away
-  // here rather than relying on each screen checking for itself.
+  // here rather than relying on each screen checking for itself. Guests are
+  // allowed in only for Home, where the screen itself masks rider data.
   React.useEffect(() => {
-    if (booting || user) return;
+    if (booting || user || guestMode) return;
     const current = `/${segments.join('/')}`;
     router.replace(withNext('/onboarding', current));
-  }, [booting, user, segments, router]);
+  }, [booting, user, guestMode, segments, router]);
 
-  if (!booting && !user) {
+  // Other tabs are signed-in surfaces. A guest tapping one is asked to sign in
+  // instead of being dropped into a screen full of empty prompts.
+  const guestTabListeners = guestMode
+    ? {
+        tabPress: (event: { preventDefault: () => void }) => {
+          event.preventDefault();
+          promptLogin();
+        },
+      }
+    : undefined;
+
+  if (!booting && !user && !guestMode) {
     // Render nothing so no signed-in affordance is visible for a frame.
     return <View testID="tabs-guest-redirecting" style={{ flex: 1, backgroundColor: colors.background }} />;
   }
@@ -65,14 +78,14 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="home" options={{ tabBarButtonTestID: 'tab-home', tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} /> }} />
-      <Tabs.Screen name="rides" options={{ tabBarButtonTestID: 'tab-rides', tabBarIcon: ({ color }) => <Ionicons name="car" size={24} color={color} /> }} />
+      <Tabs.Screen name="rides" listeners={guestTabListeners} options={{ tabBarButtonTestID: 'tab-rides', tabBarIcon: ({ color }) => <Ionicons name="car" size={24} color={color} /> }} />
       <Tabs.Screen
         name="create"
         options={{ tabBarButton: () => <CenterTabButton /> }}
         listeners={{ tabPress: (e) => e.preventDefault() }}
       />
-      <Tabs.Screen name="messages" options={{ tabBarButtonTestID: 'tab-messages', tabBarIcon: ({ color }) => <Ionicons name="chatbubbles" size={24} color={color} /> }} />
-      <Tabs.Screen name="profile" options={{ tabBarButtonTestID: 'tab-profile', tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} /> }} />
+      <Tabs.Screen name="messages" listeners={guestTabListeners} options={{ tabBarButtonTestID: 'tab-messages', tabBarIcon: ({ color }) => <Ionicons name="chatbubbles" size={24} color={color} /> }} />
+      <Tabs.Screen name="profile" listeners={guestTabListeners} options={{ tabBarButtonTestID: 'tab-profile', tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} /> }} />
     </Tabs>
   );
 }

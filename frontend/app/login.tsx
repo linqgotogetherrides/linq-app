@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Pla
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { sanitizeNext, withNext, destinationAfterAuth } from '@/src/lib/authNavigation';
+import { sanitizeNext, destinationAfterAuth } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import { signInWithPhoneNumber } from '../src/lib/auth';
 import { signInWithProvider } from '../src/lib/oauth';
@@ -19,10 +19,15 @@ export default function Login() {
   // The page the gate turned away from, carried through the whole flow.
   const { next } = useLocalSearchParams<{ next?: string }>();
   const safeNext = sanitizeNext(next);
-  const { setConfirmResult, showToast, fetchUserProfile, setOtpVerifiedUid } = useApp();
+  const { setConfirmResult, showToast, fetchUserProfile, setOtpVerifiedUid, enterGuestMode } = useApp();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const valid = phone.replace(/\D/g, '').length >= 10;
+
+  const handleSkip = () => {
+    enterGuestMode();
+    router.replace('/(tabs)/home');
+  };
 
   const handleLogin = async () => {
     if (!valid) return;
@@ -85,7 +90,7 @@ export default function Login() {
             <LinqLogo size={44} showText={false} />
             <Pressable
               testID="skip-login-button"
-              onPress={() => router.replace(withNext('/onboarding', next))}
+              onPress={handleSkip}
               hitSlop={12}
             >
               <Text style={styles.skip}>Skip</Text>
@@ -135,7 +140,7 @@ export default function Login() {
             {/* Continue with Apple is temporarily hidden until the Apple Developer
                 Services ID / .p8 key is configured in Supabase. */}
 
-            <Pressable onPress={() => router.replace('/support')} testID="signin-later">
+            <Pressable onPress={handleSkip} testID="signin-later">
               <Text style={styles.link}>Skip • Sign in later</Text>
             </Pressable>
           </View>

@@ -32,7 +32,7 @@ const DAY_PRESETS = [
 
 export default function Home() {
   const router = useRouter();
-  const { user, access, showToast, pendingRideRequestCount, locationFlowResult, clearLocationFlowResult } = useApp();
+  const { user, guestMode, promptLogin, access, showToast, pendingRideRequestCount, locationFlowResult, clearLocationFlowResult } = useApp();
   const { isActive: sosIsActive } = useSos();
   const {
     location: currentLocation,
@@ -92,6 +92,12 @@ export default function Home() {
   }, [clearLocationFlowResult, locationFlowResult]);
 
   React.useEffect(() => {
+    // Guests must never receive other riders' data. The screen masks the list
+    // with placeholder cards and the request is not made at all.
+    if (!user) {
+      setNearbyRides([]);
+      return;
+    }
     const requestId = ++nearbyRequestIdRef.current;
     (async () => {
       const origin = pickupCoordinates || (currentLocation
@@ -110,7 +116,7 @@ export default function Home() {
       });
       if (requestId === nearbyRequestIdRef.current) setNearbyRides(data);
     })();
-  }, [currentLocation, mode, pickupCoordinates, user?.id]);
+  }, [currentLocation, mode, pickupCoordinates, user, user?.id]);
 
   // Modals
   const [timePicker, setTimePicker] = useState<null | 'travel' | 'return'>(null);
@@ -258,9 +264,9 @@ export default function Home() {
   };
 
   // Home is the entry point for searching, finding a ride twin and reaching the
-  // referral game, so it must never render those to a rider with no account.
-  // AuthGate and the tab layout already redirect; this is the local guard.
-  if (!user) {
+  // referral game. A signed-out visitor who did not choose guest mode is still
+  // held at the prompt; a guest gets the masked version of Home below.
+  if (!user && !guestMode) {
     return (
       <SafeAreaView style={styles.container} edges={['top']} testID="home-guest">
         <GuestPrompt
@@ -275,6 +281,14 @@ export default function Home() {
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="home-screen">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        {!user && (
+          <View style={styles.guestBanner} testID="guest-mode-banner">
+            <Ionicons name="eye-outline" size={16} color={colors.primary} />
+            <Text style={styles.guestBannerText}>
+              Browsing as guest · tap anywhere to log in and get started
+            </Text>
+          </View>
+        )}
         {/* Top Header */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
@@ -419,11 +433,11 @@ export default function Home() {
               <View style={styles.timeGrid}>
                 <Pressable style={styles.timeBox} testID="daily-travel-time" onPress={() => setTimePicker('travel')}>
                   <Text style={styles.smallLabel}>Travel Time</Text>
-                  <View style={styles.timeSelect}><Text style={styles.timeSelectText}>{travelTime}</Text><Ionicons name="time-outline" size={14} color={colors.textSecondary} /></View>
+                  <View style={styles.timeSelect}><Text style={[styles.timeSelectText, !travelTime && { color: colors.textTertiary }]}>{travelTime || 'Select Travel Time'}</Text><Ionicons name="time-outline" size={14} color={colors.textSecondary} /></View>
                 </Pressable>
                 <Pressable style={styles.timeBox} testID="daily-return-time" onPress={() => setTimePicker('return')}>
                   <Text style={styles.smallLabel}>Return Time</Text>
-                  <View style={styles.timeSelect}><Text style={styles.timeSelectText}>{returnTime}</Text><Ionicons name="time-outline" size={14} color={colors.textSecondary} /></View>
+                  <View style={styles.timeSelect}><Text style={[styles.timeSelectText, !returnTime && { color: colors.textTertiary }]}>{returnTime || 'Select Return Time'}</Text><Ionicons name="time-outline" size={14} color={colors.textSecondary} /></View>
                 </Pressable>
               </View>
             </View>
@@ -437,7 +451,7 @@ export default function Home() {
               </Pressable>
               <Pressable style={styles.timeBox} testID="planned-time" onPress={() => setTimePicker('travel')}>
                 <Text style={styles.smallLabel}>Travel Time</Text>
-                <View style={styles.timeSelect}><Text style={styles.timeSelectText}>{travelTime}</Text><Ionicons name="time-outline" size={14} color={colors.textSecondary} /></View>
+                <View style={styles.timeSelect}><Text style={[styles.timeSelectText, !travelTime && { color: colors.textTertiary }]}>{travelTime || 'Select Travel Time'}</Text><Ionicons name="time-outline" size={14} color={colors.textSecondary} /></View>
               </Pressable>
             </View>
           )}
@@ -471,16 +485,19 @@ export default function Home() {
           </View>
         </View>
 
-        {/* Free Request Counter */}
-        <View style={styles.limitBanner}>
-          <Ionicons name="flash" size={16} color={colors.primary} />
-          <Text style={styles.limitText}>
-            {access.freeRequestsRemaining} requests · {access.freeChatsRemaining} chats remaining
-          </Text>
-          <Pressable onPress={() => router.push('/pricing')} testID="upgrade-mini">
-            <Text style={styles.limitUpgrade}>Upgrade</Text>
-          </Pressable>
-        </View>
+        {/* Free Request Counter — account-only, so guests do not see a budget
+            they cannot use. */}
+        {user && (
+          <View style={styles.limitBanner}>
+            <Ionicons name="flash" size={16} color={colors.primary} />
+            <Text style={styles.limitText}>
+              {access.freeRequestsRemaining} requests · {access.freeChatsRemaining} chats remaining
+            </Text>
+            <Pressable onPress={() => router.push('/pricing')} testID="upgrade-mini">
+              <Text style={styles.limitUpgrade}>Upgrade</Text>
+            </Pressable>
+          </View>
+        )}
 
         {/* Nearby Rides List */}
         <View style={styles.ridesHeader}>
@@ -506,7 +523,26 @@ export default function Home() {
           </Pressable>
         </View>
         <View style={{ paddingHorizontal: spacing.xl }}>
-          {nearbyRides.length === 0 ? (
+          {!user ? (
+            // Rider cards are hidden until sign-in: no names, routes or fares
+            // belonging to other customers are rendered for a guest.
+            <View testID="guest-masked-rides">
+              <View style={styles.maskedHint}>
+                <Ionicons name="lock-closed-outline" size={14} color={colors.textSecondary} />
+                <Text style={styles.maskedHintText}>Sign in to see rides near you</Text>
+              </View>
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={styles.maskedCard}>
+                  <View style={styles.maskedAvatar} />
+                  <View style={styles.maskedBody}>
+                    <View style={[styles.maskedLine, { width: '70%' }]} />
+                    <View style={[styles.maskedLine, { width: '45%' }]} />
+                    <View style={[styles.maskedLine, { width: '60%', height: 8 }]} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : nearbyRides.length === 0 ? (
             <EmptyState
               icon="car-outline"
               title={currentLocation ? 'No active rides nearby' : 'No active rides available'}
@@ -519,6 +555,16 @@ export default function Home() {
           )}
         </View>
       </ScrollView>
+
+      {/* A guest can see Home, but every tap lands on the sign-in prompt. */}
+      {!user && (
+        <Pressable
+          style={styles.guestLockOverlay}
+          onPress={promptLogin}
+          testID="guest-lock-overlay"
+          accessibilityLabel="Sign in to get started"
+        />
+      )}
 
       {/* Optional, non-blocking offer once a location is already applied. */}
       <SavePlaceSheet
@@ -548,6 +594,9 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surfaceSecondary },
+  guestLockOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 10 },
+  guestBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: spacing.xl, marginTop: spacing.sm, backgroundColor: colors.primaryLight, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  guestBannerText: { flex: 1, fontSize: font.size.xs, color: colors.textPrimary },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.md, gap: spacing.sm },
   greeting: { fontSize: font.size.lg, color: colors.textPrimary, fontWeight: font.weight.medium },
   locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 4 },
@@ -606,6 +655,13 @@ const styles = StyleSheet.create({
   ridesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xl, marginTop: spacing.xl, marginBottom: spacing.md },
   ridesTitle: { fontSize: font.size.lg, color: colors.textPrimary, fontWeight: font.weight.medium },
   seeAll: { fontSize: font.size.sm, color: colors.primary, fontWeight: font.weight.medium },
+
+  maskedHint: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: spacing.sm },
+  maskedHintText: { fontSize: font.size.xs, color: colors.textSecondary },
+  maskedCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md },
+  maskedAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.divider },
+  maskedBody: { flex: 1, gap: 8 },
+  maskedLine: { height: 10, borderRadius: 5, backgroundColor: colors.divider },
 
   // SOS Action Sheet Styles
 });

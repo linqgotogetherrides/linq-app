@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PENDING_REFERRAL_KEY } from '@/src/services/referralLink';
 import { saveSession } from '@/src/services/session';
 import { userProfileExists } from '@/src/services/userProfile';
+import { signInWithPhoneNumber } from '@/src/lib/auth';
 import { destinationAfterAuth, sanitizeNext } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
@@ -15,10 +16,11 @@ import { colors, spacing, font, radius } from '@/src/theme/tokens';
 export default function Otp() {
   const router = useRouter();
   const { phone, next } = useLocalSearchParams<{ phone: string; next?: string }>();
-  const { confirmResult, setOtpVerifiedUid, showToast, fetchUserProfile } = useApp();
+  const { confirmResult, setConfirmResult, setOtpVerifiedUid, showToast, fetchUserProfile } = useApp();
   const [otp, setOtp] = useState('');
   const [remaining, setRemaining] = useState(60);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (remaining > 0) {
@@ -28,6 +30,31 @@ export default function Otp() {
   }, [remaining]);
 
   const canContinue = otp.length === 6;
+
+  /**
+   * The countdown only controls how often a code can be requested. Once it
+   * reaches zero the label becomes a real button: a new confirmation replaces
+   * the expired one, otherwise Continue would keep checking the old session.
+   */
+  const handleResend = async () => {
+    if (remaining > 0 || resending) return;
+    if (!phone) {
+      showToast('Phone number missing. Please go back and try again.');
+      return;
+    }
+    try {
+      setResending(true);
+      const confirmation = await signInWithPhoneNumber(phone);
+      setConfirmResult(confirmation);
+      setOtp('');
+      setRemaining(60);
+      showToast('A new OTP has been sent.');
+    } catch (e: any) {
+      showToast(e?.message || 'Could not resend the OTP. Please try again.');
+    } finally {
+      setResending(false);
+    }
+  };
 
   const handleVerify = async () => {
     if (!confirmResult) {
@@ -119,9 +146,23 @@ export default function Otp() {
                 placeholderTextColor={colors.textSecondary}
               />
             </View>
-            <Text style={styles.resend}>
-              Resend OTP in <Text style={{ color: colors.error }}>{remaining} sec</Text>
-            </Text>
+            {remaining > 0 ? (
+              <Text style={styles.resend}>
+                Resend OTP in <Text style={{ color: colors.error }}>{remaining} sec</Text>
+              </Text>
+            ) : (
+              <Pressable
+                testID="resend-otp-button"
+                onPress={handleResend}
+                disabled={resending}
+                hitSlop={10}
+                style={styles.resendActionWrap}
+              >
+                <Text style={[styles.resendAction, resending && { opacity: 0.6 }]}>
+                  {resending ? 'Sending OTP...' : 'Resend OTP'}
+                </Text>
+              </Pressable>
+            )}
             <PrimaryButton
               testID="otp-continue-button"
               title={loading ? "Verifying..." : "Continue"}
@@ -149,5 +190,7 @@ const styles = StyleSheet.create({
     letterSpacing: 12,
   },
   resend: { textAlign: 'center', color: colors.textSecondary, fontSize: font.size.sm, marginBottom: spacing.md },
+  resendActionWrap: { alignItems: 'center', marginBottom: spacing.md },
+  resendAction: { color: colors.primary, fontSize: font.size.sm, fontWeight: font.weight.medium, textDecorationLine: 'underline' },
   link: { textAlign: 'center', color: colors.textSecondary, fontSize: font.size.base },
 });

@@ -27,6 +27,17 @@ interface AppContextValue {
    * this so a returning rider is not flashed the login screen on every launch.
    */
   booting: boolean;
+  /**
+   * True when the rider chose to browse without an account. The gate lets them
+   * see Home, but every action there asks them to sign in before continuing.
+   */
+  guestMode: boolean;
+  enterGuestMode: () => void;
+  exitGuestMode: () => void;
+  /** Opens the shared "sign in to get started" sheet. */
+  loginPromptVisible: boolean;
+  promptLogin: () => void;
+  dismissLoginPrompt: () => void;
   confirmResult: any;
   setConfirmResult: (res: any) => void;
   /**
@@ -150,6 +161,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthed, setIsAuthed] = useState(false);
   const [booting, setBooting] = useState(true);
+  const [guestMode, setGuestMode] = useState(false);
+  const [loginPromptVisible, setLoginPromptVisible] = useState(false);
   // Mirrors `user` so the restore effect can read it without re-running.
   const userRef = React.useRef<User | null>(null);
   userRef.current = user;
@@ -163,10 +176,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [rideNotifications, setRideNotifications] = useState<Notification[]>([]);
   const [isLoadingRideActivity, setIsLoadingRideActivity] = useState(false);
 
+  // Any real account ends guest browsing, no matter which sign-up path set it.
+  React.useEffect(() => {
+    if (!user) return;
+    setGuestMode(false);
+    setLoginPromptVisible(false);
+  }, [user]);
+
   const showToast = useCallback((m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 2200);
   }, []);
+
+  const enterGuestMode = useCallback(() => {
+    setGuestMode(true);
+    setLoginPromptVisible(false);
+  }, []);
+
+  const exitGuestMode = useCallback(() => {
+    setGuestMode(false);
+    setLoginPromptVisible(false);
+  }, []);
+
+  const promptLogin = useCallback(() => setLoginPromptVisible(true), []);
+  const dismissLoginPrompt = useCallback(() => setLoginPromptVisible(false), []);
 
   const refreshRideActivity = useCallback(async () => {
     const userId = user?.id;
@@ -392,6 +425,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     setUser(mappedUser);
     setIsAuthed(true);
+    // A real account always ends guest browsing. This also clears a stale guest
+    // flag when a session is restored on a later launch.
+    setGuestMode(false);
+    setLoginPromptVisible(false);
     return mappedUser;
   }, []);
 
@@ -525,6 +562,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider
       value={{
         user, setUser, isAuthed, setIsAuthed, booting,
+        guestMode, enterGuestMode, exitGuestMode,
+        loginPromptVisible, promptLogin, dismissLoginPrompt,
         confirmResult, setConfirmResult, otpVerifiedUid, setOtpVerifiedUid,
         access, useRequest, useChat, upgradePlan, singleUnlock,
         toast, showToast, fetchUserProfile, refreshUser,

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, Dimensions, Image } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { withNext } from '@/src/lib/authNavigation';
+import { useApp } from '@/src/context/AppContext';
 import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import PrimaryButton from '@/src/components/PrimaryButton';
@@ -46,6 +47,7 @@ export default function Onboarding() {
   const router = useRouter();
   // The page the gate turned away from, if any.
   const { next } = useLocalSearchParams<{ next?: string }>();
+  const { enterGuestMode } = useApp();
   const [step, setStep] = useState(0);
 
   useEffect(() => {
@@ -59,13 +61,20 @@ export default function Onboarding() {
     router.replace(withNext('/login', next));
   };
 
+  const handleSkip = () => {
+    // Browsing without an account is allowed, but only on Home and with every
+    // action gated behind the sign-in prompt.
+    enterGuestMode();
+    router.replace('/(tabs)/home');
+  };
+
   const slide = slides[step];
 
   return (
     <SafeAreaView style={styles.container} testID="onboarding-screen">
       <View style={styles.top}>
         <LinqLogo size={42} showText={false} />
-        <Pressable testID="skip-onboarding-button" onPress={handleGetStarted} hitSlop={12}>
+        <Pressable testID="skip-onboarding-button" onPress={handleSkip} hitSlop={12}>
           <Text style={styles.skip}>Skip</Text>
         </Pressable>
       </View>

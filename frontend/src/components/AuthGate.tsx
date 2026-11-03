@@ -3,7 +3,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 
 import { useApp } from '@/src/context/AppContext';
-import { isPublicRoute, withNext } from '@/src/lib/authNavigation';
+import { isGuestRoute, isPublicRoute, withNext } from '@/src/lib/authNavigation';
 import { colors } from '@/src/theme/tokens';
 
 /**
@@ -23,7 +23,7 @@ import { colors } from '@/src/theme/tokens';
  * login screen while their profile loads.
  */
 export default function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, booting } = useApp();
+  const { user, booting, guestMode } = useApp();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -31,12 +31,15 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     if (booting) return;
     const current = pathname ?? '/';
     if (isPublicRoute(current)) return;
+    if (guestMode && isGuestRoute(current)) return;
     if (!user) {
       // `replace` so the blocked screen does not sit in history behind login.
       // The destination is carried so the rider returns to it after signing in.
-      router.replace(withNext('/onboarding', current));
+      router.replace(withNext(guestMode ? '/login' : '/onboarding', current));
     }
-  }, [booting, user, pathname, router]);
+  }, [booting, user, guestMode, pathname, router]);
+
+  const guestAllowed = guestMode && isGuestRoute(pathname ?? '/');
 
   // Hold the screen until the session question is answered, otherwise a
   // protected screen would flash its contents for a frame first.
@@ -56,7 +59,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!user && !isPublicRoute(pathname ?? '/')) {
+  if (!user && !isPublicRoute(pathname ?? '/') && !guestAllowed) {
     // Render nothing while the redirect lands, so nothing protected is visible.
     return (
       <View
