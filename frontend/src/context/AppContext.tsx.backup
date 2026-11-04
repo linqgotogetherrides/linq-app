@@ -1,0 +1,541 @@
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
+import type {
+  AccessState,
+  LocationFlowResult,
+  Notification,
+  RideRequest,
+  SavedLocation,
+  SavedLocationType,
+  SavedUserLocations,
+  User,
+  VerificationDocument,
+} from '@/src/types';
+import { supabase } from '@/src/lib/supabase';
+import { ensureUserProfile } from '@/src/services/userProfile';
+import { clearSession, readSession } from '@/src/services/session';
+import { rideRequestService } from '@/src/services/rideRequestService';
+import { savedPlaceKey } from '@/src/lib/location/savedPlaces';
+
+interface AppContextValue {
+  user: User | null;
+  setUser: (u: User | null) => void;
+  isAuthed: boolean;
+  setIsAuthed: (v: boolean) => void;
+  /**
+   * True until we have decided whether a session exists. The auth gate waits for
+   * this so a returning rider is not flashed the login screen on every launch.
+   */
+  booting: boolean;
+  confirmResult: any;
+  setConfirmResult: (res: any) => void;
+  /**
+   * The uid whose phone number was actually confirmed by a successful OTP
+   * check. Set only inside the OTP screen after confirm() resolves.
+   *
+   * Account creation must not trust a `uid` route param, because a crafted
+   * /account-creation?uid=anything link would otherwise skip verification
+   * entirely. This value cannot be supplied from a URL.
+   */
+  otpVerifiedUid: string | null;
+  setOtpVerifiedUid: (uid: string | null) => void;
+  access: AccessState;
+  useRequest: () => boolean;
+  useChat: () => boolean;
+  upgradePlan: (plan: 'yearly' | 'twoYear') => void;
+  singleUnlock: () => void;
+  toast: string | null;
+  showToast: (m: string) => void;
+  fetchUserProfile: (uid: string) => Promise<User | null>;
+  refreshUser: () => Promise<void>;
+  saveUserLocation: (
+    type: SavedLocationType,
+    location: SavedLocation
+  ) => Promise<boolean>;
+  saveCustomLocation: (name: string, location: SavedLocation) => Promise<boolean>;
+  /** Places the rider declined to save, so the prompt is not shown again. */
+  savedDismissals: Set<string>;
+  dismissSavePlace: (location: SavedLocation) => void;
+  locationFlowResult: LocationFlowResult | null;
+  setLocationFlowResult: (result: LocationFlowResult) => void;
+  clearLocationFlowResult: () => void;
+  rideRequests: RideRequest[];
+  rideNotifications: Notification[];
+  pendingRideRequestCount: number;
+  isLoadingRideActivity: boolean;
+  refreshRideActivity: () => Promise<void>;
+  respondToRideRequest: (
+    requestId: string,
+    decision: 'accepted' | 'declined'
+  ) => Promise<void>;
+}
+
+/** Caps the custom saved-place list so the jsonb column cannot grow unbounded. */
+const MAX_CUSTOM_LOCATIONS = 12;
+
+const defaultAccess: AccessState = {
+  freeRequestsRemaining: 2,
+  freeChatsRemaining: 2,
+  plan: 'free',
+};
+
+function normalizeSavedLocation(value: unknown): SavedLocation | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Partial<SavedLocation>;
+  if (
+    typeof candidate.label !== 'string' ||
+    typeof candidate.address !== 'string' ||
+    !Number.isFinite(candidate.latitude) ||
+    !Number.isFinite(candidate.longitude)
+  ) {
+    return undefined;
+  }
+
+  return {
+    label: candidate.label,
+    address: candidate.address,
+    latitude: candidate.latitude as number,
+    longitude: candidate.longitude as number,
+    updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : undefined,
+  };
+}
+
+function normalizeSavedLocations(value: unknown): SavedUserLocations {
+  let parsed = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') return {};
+  const saved = parsed as Partial<SavedUserLocations>;
+  const custom = Array.isArray(saved.custom)
+    ? saved.custom
+        .map(normalizeSavedLocation)
+        .filter((entry): entry is SavedLocation => Boolean(entry))
+    : [];
+  return {
+    home: normalizeSavedLocation(saved.home),
+    office: normalizeSavedLocation(saved.office),
+    college: normalizeSavedLocation(saved.college),
+    custom,
+    defaultPickup: normalizeSavedLocation(saved.defaultPickup),
+    defaultDrop: normalizeSavedLocation(saved.defaultDrop),
+  };
+}
+
+function normalizePhone(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return undefined;
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function normalizeAvatarUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const url = value.trim();
+  if (!url || url.includes('i.pravatar.cc') || url.includes('pravatar.cc')) return undefined;
+  return url;
+}
+
+function normalizeVerificationDocument(value: unknown): VerificationDocument | undefined {
+  return value === 'aadhaar' || value === 'pan' || value === 'dl' ? value : undefined;
+}
+
+const AppContext = createContext<AppContextValue | null>(null);
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [booting, setBooting] = useState(true);
+  // Mirrors `user` so the restore effect can read it without re-running.
+  const userRef = React.useRef<User | null>(null);
+  userRef.current = user;
+  const [confirmResult, setConfirmResult] = useState<any>(null);
+  const [otpVerifiedUid, setOtpVerifiedUid] = useState<string | null>(null);
+  const [access, setAccess] = useState<AccessState>(defaultAccess);
+  const [toast, setToast] = useState<string | null>(null);
+  const [locationFlowResult, setLocationFlowResult] = useState<LocationFlowResult | null>(null);
+  const [savedDismissals, setSavedDismissals] = useState<Set<string>>(new Set());
+  const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
+  const [rideNotifications, setRideNotifications] = useState<Notification[]>([]);
+  const [isLoadingRideActivity, setIsLoadingRideActivity] = useState(false);
+
+  const showToast = useCallback((m: string) => {
+    setToast(m);
+    setTimeout(() => setToast(null), 2200);
+  }, []);
+
+  const refreshRideActivity = useCallback(async () => {
+    const userId = user?.id;
+    if (!userId) {
+      setRideRequests([]);
+      setRideNotifications([]);
+      return;
+    }
+
+    setIsLoadingRideActivity(true);
+    try {
+      const [requests, notifications] = await Promise.all([
+        rideRequestService.getIncomingRideRequests(userId),
+        rideRequestService.getNotifications(userId),
+      ]);
+      setRideRequests(requests);
+      setRideNotifications(notifications);
+    } finally {
+      setIsLoadingRideActivity(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) return;
+
+    void refreshRideActivity();
+    const channel = supabase
+      .channel(`ride-activity:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ride_requests',
+          filter: `owner_id=eq.${userId}`,
+        },
+        () => void refreshRideActivity()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        () => void refreshRideActivity()
+      )
+      .subscribe();
+
+    // Realtime is the fast path, but the socket drops on flaky mobile networks
+    // and stays down, which would leave the rider looking at stale requests with
+    // no way to tell. A slow foreground-only poll keeps things roughly current
+    // when the websocket is unavailable, and costs nothing while backgrounded.
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (poll) return;
+      poll = setInterval(() => void refreshRideActivity(), 45_000);
+    };
+    const stopPolling = () => {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    };
+
+    const appStateSub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') {
+        void refreshRideActivity();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    });
+    startPolling();
+
+    return () => {
+      stopPolling();
+      appStateSub.remove();
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshRideActivity, user?.id]);
+
+  const clearLocationFlowResult = useCallback(() => {
+    setLocationFlowResult(null);
+  }, []);
+
+  const saveUserLocation = useCallback(async (
+    type: SavedLocationType,
+    location: SavedLocation
+  ): Promise<boolean> => {
+    if (!user) {
+      showToast('Sign in to save this location for quick access.');
+      return false;
+    }
+
+    const savedLocation: SavedLocation = {
+      ...location,
+      updatedAt: new Date().toISOString(),
+    };
+    const currentSaved = user.savedLocations || {};
+    const nextSaved: SavedUserLocations = {
+      ...currentSaved,
+      [type]: savedLocation,
+    };
+    const legacyAddressField =
+      type === 'home' ? 'home_address' : type === 'office' ? 'office_address' : 'college_address';
+
+    try {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          saved_locations: nextSaved,
+          [legacyAddressField]: savedLocation.address,
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+    } catch {
+      showToast('Location selected, but it could not be saved to your profile.');
+      return false;
+    }
+
+    setUser({
+      ...user,
+      homeAddress: type === 'home' ? savedLocation.address : user.homeAddress,
+      officeAddress: type === 'office' ? savedLocation.address : user.officeAddress,
+      collegeAddress: type === 'college' ? savedLocation.address : user.collegeAddress,
+      savedLocations: nextSaved,
+    });
+    showToast(`${type[0].toUpperCase()}${type.slice(1)} saved for quick access`);
+    return true;
+  }, [showToast, user]);
+
+  /**
+   * Persists a user-named place into the existing saved_locations column.
+   * Replaces an existing custom place with the same normalised name.
+   */
+  const saveCustomLocation = useCallback(async (
+    name: string,
+    location: SavedLocation
+  ): Promise<boolean> => {
+    if (!user) {
+      showToast('Sign in to save this location for quick access.');
+      return false;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      showToast('Give this place a name before saving.');
+      return false;
+    }
+
+    const savedLocation: SavedLocation = {
+      ...location,
+      label: trimmed,
+      address: location.address || trimmed,
+      updatedAt: new Date().toISOString(),
+    };
+    const existing = user.savedLocations?.custom || [];
+    const key = trimmed.toLowerCase();
+    const nextCustom = [
+      ...existing.filter((place) => place.label.toLowerCase() !== key),
+      savedLocation,
+    ].slice(-MAX_CUSTOM_LOCATIONS);
+    const nextSaved: SavedUserLocations = {
+      ...(user.savedLocations || {}),
+      custom: nextCustom,
+    };
+
+    try {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({ saved_locations: nextSaved })
+        .eq('id', user.id);
+
+      if (error) throw error;
+    } catch {
+      showToast('Location selected, but it could not be saved to your profile.');
+      return false;
+    }
+
+    setUser({ ...user, savedLocations: nextSaved });
+    showToast(`${trimmed} saved for quick access`);
+    return true;
+  }, [showToast, user]);
+
+  /**
+   * Records that the rider declined to keep a place. Session-scoped on purpose:
+   * the offer stays optional and never nags within one booking session.
+   */
+  const dismissSavePlace = useCallback((location: SavedLocation) => {
+    setSavedDismissals((current) => {
+      const next = new Set(current);
+      next.add(savedPlaceKey(location));
+      return next;
+    });
+  }, []);
+
+  /** Maps a user_profiles row onto the app's User shape and publishes it. */
+  const mapAndSet = useCallback((data: Record<string, any>): User => {
+    const mappedUser: User = {
+      id: data.id,
+      name: data.name || '',
+      age: data.age || undefined,
+      gender: data.gender || undefined,
+      womenOnlyMode: data.women_only_mode,
+      bio: data.bio || undefined,
+      phone: normalizePhone(data.phone_number),
+      email: data.email || undefined,
+      avatarUrl: normalizeAvatarUrl(data.avatar_url),
+      rating: data.rating,
+      trips: data.total_trips,
+      co2Saved: data.co2_saved_kg,
+      verification: data.verification_status,
+      verificationDocument: normalizeVerificationDocument(
+        data.verification_document || data.verification_doc
+      ),
+      emergencyContact: normalizePhone(data.emergency_contact),
+      homeAddress: data.home_address || undefined,
+      officeAddress: data.office_address || undefined,
+      collegeAddress: data.college_address || undefined,
+      savedLocations: normalizeSavedLocations(data.saved_locations),
+    };
+    setUser(mappedUser);
+    setIsAuthed(true);
+    return mappedUser;
+  }, []);
+
+  const fetchUserProfile = useCallback(async (uid: string): Promise<User | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', uid)
+        .maybeSingle();
+        
+      if (error || !data) {
+        // No profile row. Every feature with a foreign key onto user_profiles
+        // (the referral game, seat requests, notifications) would fail with a
+        // bare 409, so create it now rather than leaving the rider stuck.
+        const created = await ensureUserProfile({ userId: uid });
+        if (!created.ok) {
+          console.warn('Could not create the Supabase profile row:', created.error);
+          return null;
+        }
+        const { data: healed, error: healError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', uid)
+          .maybeSingle();
+        if (healError || !healed) {
+          console.warn('Profile row created but could not be read back:', healError?.message);
+          return null;
+        }
+        return mapAndSet(healed);
+      }
+
+      return mapAndSet(data);
+    } catch (e) {
+      console.log('Error fetching user:', e);
+      return null;
+    }
+  }, [mapAndSet]);
+
+  /**
+   * Restore the signed-in rider on cold start. A stale id simply fails to load a
+   * profile and is treated as signed out, so a deleted or half-created account
+   * cannot lock anyone in.
+   */
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const storedUid = await readSession();
+      if (!storedUid) {
+        if (!cancelled) setBooting(false);
+        return;
+      }
+      await fetchUserProfile(storedUid);
+      if (cancelled) return;
+      if (!userRef.current) {
+        // The row is gone or unreadable. Do not leave a dead id behind.
+        await clearSession();
+      }
+      setBooting(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchUserProfile]);
+
+  const refreshUser = async () => {
+    if (user?.id) {
+      await fetchUserProfile(user.id);
+    }
+  };
+
+  const useRequest = useCallback(() => {
+    if (access.plan !== 'free') return true;
+    if (access.freeRequestsRemaining <= 0) return false;
+    setAccess((a) => ({ ...a, freeRequestsRemaining: a.freeRequestsRemaining - 1 }));
+    return true;
+  }, [access.plan, access.freeRequestsRemaining]);
+
+  const useChat = useCallback(() => {
+    if (access.plan !== 'free') return true;
+    if (access.freeChatsRemaining <= 0) return false;
+    setAccess((a) => ({ ...a, freeChatsRemaining: a.freeChatsRemaining - 1 }));
+    return true;
+  }, [access.plan, access.freeChatsRemaining]);
+
+  const upgradePlan = useCallback((plan: 'yearly' | 'twoYear') => {
+    setAccess({ plan, freeRequestsRemaining: 5, freeChatsRemaining: 5 });
+    showToast(`${plan === 'yearly' ? 'Yearly' : '2 Year'} plan activated`);
+  }, [showToast]);
+
+  const singleUnlock = useCallback(() => {
+    setAccess((a) => ({ ...a, freeRequestsRemaining: a.freeRequestsRemaining + 1 }));
+    showToast('Single unlock added');
+  }, [showToast]);
+
+  const respondToRideRequest = useCallback(async (
+    requestId: string,
+    decision: 'accepted' | 'declined'
+  ) => {
+    const ownerId = user?.id;
+    if (!ownerId) {
+      showToast('Sign in to respond to ride requests.');
+      return;
+    }
+
+    const request = rideRequests.find((item) => item.id === requestId);
+    try {
+      await rideRequestService.respondToRideRequest(requestId, ownerId, decision);
+      await refreshRideActivity();
+      showToast(
+        decision === 'accepted'
+          ? `Ride confirmed with ${request?.requester.name ?? 'the rider'}`
+          : 'Ride request declined'
+      );
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'The request could not be updated.');
+      await refreshRideActivity();
+    }
+  }, [refreshRideActivity, rideRequests, showToast, user?.id]);
+
+  // The wallet is owned by WalletContext, which persists every mutation in
+  // Supabase. AppContext deliberately keeps no balance of its own so there is
+  // a single source of truth for money.
+
+  return (
+    <AppContext.Provider
+      value={{
+        user, setUser, isAuthed, setIsAuthed, booting,
+        confirmResult, setConfirmResult, otpVerifiedUid, setOtpVerifiedUid,
+        access, useRequest, useChat, upgradePlan, singleUnlock,
+        toast, showToast, fetchUserProfile, refreshUser,
+        saveUserLocation, saveCustomLocation, savedDismissals, dismissSavePlace, locationFlowResult, setLocationFlowResult, clearLocationFlowResult,
+        rideRequests, rideNotifications,
+        pendingRideRequestCount: rideRequests.filter((request) => request.status === 'pending').length,
+        isLoadingRideActivity, refreshRideActivity, respondToRideRequest
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useApp() {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error('useApp must be inside AppProvider');
+  return ctx;
+}

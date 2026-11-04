@@ -8,10 +8,32 @@ Complete deployment, security and operations guide for the SOS safety system.
 
 | Layer | Component | Status |
 |---|---|---|
-| Database | 5 tables, 3 trigger guards, RLS, private storage bucket | migration `20260925140000` … `20260925180000` |
-| Edge Functions | `sos-activate`, `sos-location`, `sos-end`, `sos-evidence`, `sos-admin` | deployed, JWT verification disabled |
-| Mobile | press-and-hold SOS, confirmation, live status, evidence capture | this app |
+| Database | 5 incident tables + `sos_events`, 3 trigger guards, RLS, private storage bucket | migrations `20260925140000` … `20260925180000`, `20261104120000` |
+| Edge Functions | `sos-activate`, `sos-location`, `sos-end`, `sos-evidence`, `sos-admin`, `sos-upload` | deployed, JWT verification disabled |
+| Mobile | press-and-hold SOS → 25 s countdown → evidence → WhatsApp | this app |
 | Admin | `/admin/sos` dashboard + incident detail | role-gated |
+
+The reference flow (`sos-upload` + `sos_events`) is separate from the older
+incident/live-tracking system. It is the path the Home/Safety SOS control uses:
+a 25 second cancellable countdown, four photos, a five second video, a five
+second audio clip, `location.json`, a private Storage upload, then WhatsApp.
+
+### Deploying the reference flow
+
+```bash
+cd backend
+supabase db push
+supabase functions deploy sos-upload --no-verify-jwt
+```
+
+`verify_jwt` must stay off for `sos-upload` because phone users authenticate
+with Firebase tokens, not Supabase-issued JWTs. The function verifies the bearer
+token itself (Supabase `getUser`, then Firebase JWKS) and derives `user_id` from
+it. It never trusts a user id in the request body.
+
+The bucket stays private and service-role only; the function performs every
+Storage read/write. `sos_events` has RLS, but the client only reads it through
+normal Supabase session policies.
 
 ---
 
@@ -27,6 +49,10 @@ supabase secrets set SOS_TRACKING_SECRET="$(openssl rand -hex 32)"
 # When set, alerts are POSTed here and the dashboard shows SENT/FAILED.
 supabase secrets set SOS_ALERT_WEBHOOK_URL="https://your-relay.example.com/linq-sos"
 supabase secrets set SOS_ALERT_WEBHOOK_SECRET="shared-secret"
+
+# Optional for sos-upload. Defaults to linq-7d413 (google-services.json). Set it
+# if the Firebase project is changed.
+supabase secrets set FIREBASE_PROJECT_ID="linq-7d413"
 ```
 
 > **Never** put `SUPABASE_SERVICE_ROLE_KEY`, `SOS_TRACKING_SECRET`,
@@ -117,6 +143,12 @@ active, and that the Camera/Microphone strings explain the SOS evidence purpose.
    `/sos/active` and in the admin dashboard.
 3. Camera / microphone — requested when the evidence screen opens.
 
+In the reference countdown flow, location permission is requested in parallel
+with the camera. Denying the camera still continues with audio, location,
+upload and WhatsApp; denying the microphone still continues with photos,
+location, upload and WhatsApp. On web, only the photos, location, upload and
+WhatsApp steps run.
+
 ---
 
 ## 5. Security model
@@ -134,6 +166,7 @@ active, and that the Camera/Microphone strings explain the SOS evidence purpose.
 | Tracking after SOS ends | `sos-location` returns `409` once status ≠ `ACTIVE` |
 | Evidence after SOS ends | `sos-evidence sign_upload` returns `409` once status ≠ `ACTIVE` |
 | One incident per user | partial unique index on `(user_id) WHERE status='ACTIVE'` |
+| Reference upload identity | `sos-upload` derives `user_id` from a verified Supabase/Firebase token; body ids are ignored |
 
 ### Known limitation (pre-existing, not introduced here)
 
@@ -149,6 +182,10 @@ takes `user_id` as an explicit argument. This is the same posture the existing
 (firebase-admin) and derive `user_id` from it, or migrate auth to Supabase Auth.
 The single place to change is the `requireUserId` helper in
 `backend/supabase/functions/_shared/sos.ts`.
+
+`sos-upload` already does this correctly: it verifies the bearer token against
+Supabase Auth or Google's Firebase JWKS and inserts only that derived uid. The
+older functions still take `user_id` in the body.
 
 ---
 
@@ -188,22 +225,24 @@ lockout, and self-verification guards. Test rows are removed at the end.
 
 ---
 
-## 8. Manual smoke test
+## 8. Manual smoke test (reference countdown flow)
 
-1. Sign in, open **Safety & Privacy**, add two emergency contacts.
-2. Home → hold **SOS** for 2 seconds → confirmation screen.
-3. Tap **ACTIVATE SOS**.
-4. Home now shows a red **SOS ACTIVE** banner with a live reference code.
-5. `/sos/active` shows activation time, last update, contact count, and whether
-   background tracking is actually running.
-6. Background the app for ~60 s, return: the last-update time should have moved
-   and the counter should have increased.
-7. Tap **Capture evidence now** → take a photo → it uploads and appears in the
-   admin dashboard Photos tab.
-8. Promote the account to `admin`, open `/admin/sos`, open the incident, and
-   check Location / Photos / Audio / Alerts tabs.
-9. **END SOS** → confirm → banner disappears, tracking stops, and further
-   location/evidence calls are refused with `409`.
+1. Sign in, open **Safety & Privacy**, and save an emergency contact with a
+   valid WhatsApp phone number.
+2. Home → hold **SOS** for 2 seconds. The 25 second countdown opens.
+3. Tap **CANCEL SOS** once: no evidence is captured. Hold SOS again.
+4. Let the countdown finish (or tap **Start now**). Grant location, camera and
+   microphone when prompted.
+5. Watch the native capture screen: back photos, front photos, five second
+   video, five second audio. On web, only the photos run.
+6. WhatsApp opens with the alert pre-filled for the saved contact. Press Send.
+7. Return to LinQ. The status screen lists each step as success/failure and has
+   a **Done** button.
+8. Confirm the private Storage folder
+   `sos-evidence/{user_id}/{sos_id}/` and the matching `sos_events` row.
+9. Deny the camera and repeat: photos/video are skipped, but audio, location,
+   server backup and WhatsApp still run.
+10. Open an old `/sos/confirm` deep link: it redirects to the countdown.
 
 ---
 
@@ -211,7 +250,7 @@ lockout, and self-verification guards. Test rows are removed at the end.
 
 ```bash
 cd backend
-supabase functions delete sos-activate sos-location sos-end sos-evidence sos-admin
+supabase functions delete sos-activate sos-location sos-end sos-evidence sos-admin sos-upload
 ```
 
 The tables are independent of the rest of the app; dropping them is optional

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import LinqHeader from '@/src/components/LinqHeader';
 import VerificationWebView from '@/src/components/VerificationWebView';
 import PrimaryButton from '@/src/components/PrimaryButton';
@@ -59,6 +59,10 @@ type Status = 'verified' | 'pending' | 'not_verified';
 
 export default function PanVerification() {
   const router = useRouter();
+  // Onboarding has already created the profile row, but completion is not
+  // announced until this page has been verified or explicitly skipped.
+  const { onboarding } = useLocalSearchParams<{ onboarding?: string }>();
+  const isOnboarding = onboarding === '1';
   const { user, refreshUser, showToast } = useApp();
 
   // The web build has no verifiable identity (see auth.web.ts), so the
@@ -175,13 +179,33 @@ export default function PanVerification() {
     await Promise.all([kyc.refresh(), refreshUser()]);
   };
 
-  const returnFromSuccess = () => {
+  const returnFromSuccess = async () => {
+    // Pull the verified status into the app context before leaving, so Home
+    // does not still show the rider as unverified.
+    await refreshUser();
+    if (isOnboarding) {
+      showToast('Profile created successfully!');
+      router.replace(HOME_ROUTE);
+      return;
+    }
     if (router.canGoBack()) router.back();
     else router.replace(HOME_ROUTE);
   };
 
+  /**
+   * The rider could not finish PAN verification. Their profile row already
+   * exists, so onboarding is considered complete and they enter the app
+   * unverified rather than being trapped on this page.
+   */
+  const handleSkipVerification = () => {
+    showToast('Profile created successfully!');
+    router.replace(HOME_ROUTE);
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="pan-verification-screen">
+      {/* Default back pops to the screen that opened this page: the identity
+          step during onboarding, or the verification list from the profile. */}
       <LinqHeader title="PAN Verification" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -237,10 +261,15 @@ export default function PanVerification() {
             </View>
             <Text style={styles.resultTitle}>PAN verified</Text>
             <Text style={styles.resultText}>
-              Your verification was confirmed through our provider. This status comes from the
-              server, not from any action on this screen.
+              {isOnboarding
+                ? 'Your PAN was verified and your profile is ready. Welcome to LinQ!'
+                : 'Your verification was confirmed through our provider. This status comes from the server, not from any action on this screen.'}
             </Text>
-            <PrimaryButton title="Return" onPress={returnFromSuccess} testID="pan-success-return" />
+            <PrimaryButton
+              title={isOnboarding ? 'Enter LinQ' : 'Return'}
+              onPress={returnFromSuccess}
+              testID="pan-success-return"
+            />
           </View>
         ) : (
           <View style={styles.card}>
@@ -342,6 +371,16 @@ export default function PanVerification() {
                 store the number you type here.
               </Text>
             </View>
+
+            {isOnboarding && (
+              <Pressable
+                onPress={handleSkipVerification}
+                style={styles.skipVerifyBtn}
+                testID="pan-skip-verification"
+              >
+                <Text style={styles.skipVerifyText}>Skip verification</Text>
+              </Pressable>
+            )}
           </View>
         )}
       </ScrollView>
@@ -477,6 +516,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   privacyNoteText: { flex: 1, fontSize: font.size.xs, color: colors.textSecondary },
+  skipVerifyBtn: { alignSelf: 'center', marginTop: spacing.lg, paddingVertical: spacing.sm },
+  skipVerifyText: { color: colors.primary, fontSize: font.size.base, fontWeight: font.weight.medium },
   resultCard: {
     borderWidth: 1,
     borderColor: colors.border,

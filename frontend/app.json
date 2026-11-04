@@ -15,7 +15,10 @@
       "infoPlist": {
         "UIBackgroundModes": [
           "location"
-        ]
+        ],
+        "NSCameraUsageDescription": "LinQ uses the camera to capture photos and a short video when you activate SOS.",
+        "NSMicrophoneUsageDescription": "LinQ records a short audio clip and video sound when you activate SOS.",
+        "NSLocationWhenInUseUsageDescription": "LinQ captures your location to include it in the SOS alert."
       }
     },
     "android": {

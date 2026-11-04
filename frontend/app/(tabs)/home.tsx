@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import GuestPrompt from '@/src/components/GuestPrompt';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useCurrentLocation } from '@/src/hooks/useCurrentLocation';
 import { LocationCoordinates } from '@/src/services/locationService';
 import { useApp } from '@/src/context/AppContext';
@@ -303,7 +303,7 @@ export default function Home() {
           {/* SOS Safety Button - original pill styling, press-and-hold to fire. */}
           {!sosIsActive ? (
             <SosHoldButton
-              onComplete={() => router.push('/sos/confirm')}
+              onComplete={() => router.push('/sos/countdown' as Href)}
               disabled={!user}
               testID="sos-button"
             />

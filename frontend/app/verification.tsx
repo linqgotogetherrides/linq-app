@@ -36,8 +36,8 @@ export default function Verification() {
    *
    * Aadhaar and driving licence are not offered right now, so their tap opens
    * the truthful "currently unavailable" sheet instead of being selectable as
-   * if verification could follow. PAN stays selectable and, like before, the
-   * rider's choice is only recorded after they press Continue.
+   * if verification could follow. PAN records the choice and moves on to its
+   * dedicated details page.
    */
   const handleOptionPress = (key: VerificationDocument) => {
     const action = actionForDocument(key);
@@ -46,12 +46,30 @@ export default function Verification() {
       setUnavailableDoc(action.docType);
       return;
     }
-    setSelected(key);
+    // PAN is the only method with a real flow, so choosing it moves straight
+    // to the page where the rider enters their PAN details and verifies.
+    void continueWithDocument(key);
   };
 
-  const handleContinue = async () => {
+  /**
+   * Records the rider's choice, then routes to the method's next step. PAN
+   * opens its dedicated verification page; the gated documents never reach
+   * here because they only open the "currently unavailable" sheet.
+   */
+  const continueWithDocument = async (docType: VerificationDocument) => {
+    if (loading) return;
+
+    if (docType !== 'pan') {
+      setUnavailableDoc(docType);
+      return;
+    }
+
+    setSelected(docType);
+
     if (!uid) {
-      router.replace('/(tabs)/home');
+      // The PAN page resolves the rider from the session, so it can still run
+      // when this screen was opened without a uid parameter.
+      router.push(PAN_PAGE_ROUTE as Href);
       return;
     }
 
@@ -76,20 +94,23 @@ export default function Verification() {
 
       const { error } = await supabase.from('user_profiles').update({
         verification_status: 'pending',
-        verification_document: selected,
+        verification_document: docType,
       }).eq('id', uid);
       
       if (error) throw error;
       
       await fetchUserProfile(uid);
-      showToast('Welcome to LinQ!');
-      router.replace('/(tabs)/home');
+      router.push(PAN_PAGE_ROUTE as Href);
     } catch (e: any) {
       showToast(e.message || 'Error saving verification status');
       router.replace('/(tabs)/home');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleContinue = () => {
+    void continueWithDocument(selected);
   };
 
   return (
@@ -125,9 +146,13 @@ export default function Verification() {
                 <Text style={styles.optionLabel}>{o.label}</Text>
                 <Text style={styles.optionSub}>{o.sub}</Text>
               </View>
-              <View style={[styles.radio, selected === o.key && styles.radioActive]}>
-                {selected === o.key && <View style={styles.radioInner} />}
-              </View>
+              {o.key === 'pan' ? (
+                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+              ) : (
+                <View style={styles.unavailableTag}>
+                  <Text style={styles.unavailableTagText}>Unavailable</Text>
+                </View>
+              )}
             </Pressable>
           ))}
 
@@ -154,7 +179,7 @@ export default function Verification() {
         docType={unavailableDoc}
         onVerifyWithPan={() => {
           setUnavailableDoc(null);
-          router.push(PAN_PAGE_ROUTE as Href);
+          void continueWithDocument('pan');
         }}
         onSkip={() => setUnavailableDoc(null)}
       />
@@ -178,9 +203,13 @@ const styles = StyleSheet.create({
   optionIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   optionLabel: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium },
   optionSub: { fontSize: font.size.sm, color: colors.textSecondary, marginTop: 2 },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  radioActive: { borderColor: colors.primary },
-  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+  unavailableTag: {
+    backgroundColor: colors.warningLight,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  unavailableTagText: { fontSize: font.size.xs, color: colors.warning, fontWeight: font.weight.medium },
   safe: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primaryLight, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
   safeTitle: { fontSize: font.size.sm, color: colors.textPrimary, fontWeight: font.weight.medium },
   safeSub: { fontSize: font.size.xs, color: colors.textSecondary },

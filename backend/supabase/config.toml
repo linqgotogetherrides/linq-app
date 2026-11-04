@@ -24,6 +24,13 @@ project_id = "backend"
 [functions.kyc-webhook]
 verify_jwt = false
 
+# LinQ phone users authenticate with Firebase ID tokens, not Supabase JWTs. The
+# function verifies the token signature itself against Google's public JWKS, so
+# the platform check must stay off or it rejects the request before the handler.
+# Deploy with: supabase functions deploy sos-upload --no-verify-jwt
+[functions.sos-upload]
+verify_jwt = false
+
 [api]
 enabled = true
 # Port to use for the API URL.

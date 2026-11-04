@@ -1,11 +1,21 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
 import { getIdToken } from '@/src/lib/auth';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const authStorage =
+  Platform.OS === 'web' && typeof window !== 'undefined'
+    ? window.localStorage
+    : AsyncStorage;
+// Accept both names: Supabase renamed the public key to "publishable", while
+// existing LinQ builds and CI secrets still use the older anon-key name.
+const supabaseAnonKey =
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  '';
 
 /**
  * EXPO_PUBLIC_* values are inlined at build time, so a build made without them
@@ -17,7 +27,9 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 if (!supabaseUrl || !supabaseAnonKey) {
   const missing = [
     !supabaseUrl ? 'EXPO_PUBLIC_SUPABASE_URL' : null,
-    !supabaseAnonKey ? 'EXPO_PUBLIC_SUPABASE_ANON_KEY' : null,
+    !supabaseAnonKey
+      ? 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY or EXPO_PUBLIC_SUPABASE_ANON_KEY'
+      : null,
   ].filter(Boolean);
   console.error(
     `[Supabase] Missing ${missing.join(' and ')}. The app cannot reach the database. ` +
@@ -26,8 +38,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 /**
- * The main client. Unchanged: it keeps the anon/publishable key as `apikey` and
- * is used for REST/realtime and, critically, for Google/Apple sign-in via
+ * The main client. It keeps the anon/publishable key as `apikey` and is used
+ * for REST/realtime and, critically, for Google/Apple sign-in via
  * `supabase.auth`. LinQ does NOT migrate Firebase users to Supabase Auth, so this
  * client must keep its auth surface intact — that is why it does NOT take the
  * custom `accessToken` option (setting it replaces `supabase.auth` with a Proxy
@@ -35,7 +47,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: authStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
@@ -66,7 +78,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  */
 export const supabaseFunctions = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: authStorage,
     autoRefreshToken: false,
     persistSession: false,
     detectSessionInUrl: false,

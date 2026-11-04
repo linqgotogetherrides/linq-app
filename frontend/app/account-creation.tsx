@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { saveProfile } from '@/src/services/userProfile';
 import { saveSession } from '@/src/services/session';
@@ -24,8 +24,14 @@ import { useApp } from '@/src/context/AppContext';
 import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
 import PrimaryButton from '@/src/components/PrimaryButton';
+import VerificationUnavailableModal from '@/src/components/VerificationUnavailableModal';
+import {
+  PAN_PAGE_ROUTE,
+  actionForDocument,
+  type UnavailableDocType,
+} from '@/src/lib/verificationOptions';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
-import type { User, VerificationDocument } from '@/src/types';
+import type { User, VerificationDocument, VerificationStatus } from '@/src/types';
 
 function normalizePhone(value?: string) {
   const digits = (value || '').replace(/\D/g, '');
@@ -58,9 +64,9 @@ const VERIFICATION_OPTIONS: {
   sub: string;
   icon: 'id-card' | 'card' | 'car-sport';
 }[] = [
-  { key: 'aadhaar', label: 'Aadhaar Card', sub: 'Verify instantly using Aadhaar', icon: 'id-card' as const },
-  { key: 'pan', label: 'PAN Card', sub: 'Verify using your PAN card', icon: 'card' as const },
-  { key: 'dl', label: 'Driving Licence', sub: 'Verify using your Driving Licence', icon: 'car-sport' as const },
+  { key: 'aadhaar', label: 'Aadhaar Card', sub: 'Government ID verification', icon: 'id-card' as const },
+  { key: 'pan', label: 'PAN Card', sub: 'Tax identity verification', icon: 'card' as const },
+  { key: 'dl', label: 'Driving Licence', sub: 'Required to offer rides', icon: 'car-sport' as const },
 ];
 
 export default function AccountCreation() {
@@ -86,8 +92,15 @@ export default function AccountCreation() {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [photoAdded, setPhotoAdded] = useState(false);
 
-  // ID Verification
-  const [verificationDoc, setVerificationDoc] = useState<VerificationDocument>('aadhaar');
+  // ID Verification. Only PAN has a real flow today, so nothing is selected
+  // until the rider picks it; Aadhaar and driving licence open the honest
+  // "currently unavailable" sheet instead of being recorded as a choice.
+  const [verificationDoc, setVerificationDoc] = useState<VerificationDocument | null>(null);
+  const [unavailableDoc, setUnavailableDoc] = useState<UnavailableDocType | null>(null);
+  // The profile row has to exist before a KYC session can be created, but that
+  // is not the same as finishing onboarding. Once created, later trips to the
+  // PAN page must not rewrite its verification state.
+  const profileCreatedRef = useRef(false);
 
   const [loading, setLoading] = useState(false);
 
@@ -151,7 +164,26 @@ export default function AccountCreation() {
     }
   };
 
-  const handleComplete = async () => {
+  /**
+   * Creates the profile and then sends the rider wherever the chosen
+   * verification method leads. PAN goes to its dedicated details page;
+   * choosing no method (Skip for now) finishes onboarding unverified.
+   */
+  const finalizeProfile = async ({
+    document = verificationDoc,
+    status = document ? 'pending' : 'not_verified',
+    destination,
+    announceSuccess = true,
+    navigation = 'replace',
+  }: {
+    document?: VerificationDocument | null;
+    status?: VerificationStatus;
+    destination?: Href;
+    /** False while onboarding waits for PAN verification to finish. */
+    announceSuccess?: boolean;
+    /** PAN keeps the identity screen in history so its back arrow returns there. */
+    navigation?: 'replace' | 'push';
+  } = {}) => {
     // The uid comes from the OTP screen, which has already confirmed the phone
     // number. The uid route param is deliberately ignored, because a crafted
     // /account-creation?uid=... link would otherwise get an account for free.
@@ -161,7 +193,7 @@ export default function AccountCreation() {
       // signup flow. Send them back rather than minting an identity.
       showToast('Verify your phone number to finish setting up your account.');
       router.replace('/login');
-      return;
+      return false;
     }
 
     try {
@@ -179,8 +211,8 @@ export default function AccountCreation() {
         email: oauthEmail || undefined,
         emergencyContact: emergency.trim() || undefined,
         avatarUrl: avatarUrl || undefined,
-        verification: 'pending',
-        verificationDocument: verificationDoc,
+        verification: status,
+        verificationDocument: document ?? undefined,
       };
       setUser(localProfile);
 
@@ -194,8 +226,8 @@ export default function AccountCreation() {
         bio: bio.trim(),
         emergency_contact: normalizePhone(emergency) || null,
         email: oauthEmail || null,
-        verification_status: 'pending',
-        verification_document: verificationDoc,
+        verification_status: status,
+        verification_document: document,
         avatar_url: avatarUrl || null,
       };
 
@@ -212,26 +244,109 @@ export default function AccountCreation() {
         // if the row genuinely landed.
         console.warn('Supabase profile creation failed:', saved.error);
         showToast('Profile could not be saved. Please try again.');
-        return;
+        return false;
       }
 
       const created = await fetchUserProfile(targetUid);
       if (!created) {
         showToast('Profile could not be verified. Please try again.');
-        return;
+        return false;
       }
       // Google and Apple sign-in arrive here without passing the OTP screen, so
       // the session has to be recorded on this path too.
       setOtpVerifiedUid(targetUid);
       await saveSession(targetUid);
-      showToast('Profile created successfully!');
-      router.replace(destinationAfterAuth(next));
+      profileCreatedRef.current = true;
+      if (announceSuccess) showToast('Profile created successfully!');
+      const target = destination ?? destinationAfterAuth(next);
+      if (navigation === 'push') router.push(target);
+      else router.replace(target);
+      return true;
     } catch (e: any) {
       showToast(e.message || 'Profile saved locally');
       router.replace(destinationAfterAuth(next));
+      return false;
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * The explicit completion gate. Navigating to PAN verification never calls
+   * this: only pressing Continue on the identity screen (or the PAN page's own
+   * verify/skip actions) finishes onboarding.
+   */
+  const handleComplete = async () => {
+    if (loading) return;
+
+    // The profile row already exists (it was needed for the PAN session).
+    // Re-saving here could overwrite a verification the backend just settled,
+    // so only refresh it and finish.
+    if (profileCreatedRef.current) {
+      setLoading(true);
+      try {
+        if (otpVerifiedUid) await fetchUserProfile(otpVerifiedUid);
+        showToast('Profile created successfully!');
+        router.replace(destinationAfterAuth(next));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    await finalizeProfile();
+  };
+
+  /**
+   * PAN is the only method with a real flow, so it opens its own page.
+   *
+   * The profile row must exist before a KYC session can be created, but that is
+   * not completion: the identity screen stays underneath so the PAN page's back
+   * arrow returns here. Completion still requires Continue, verification, or an
+   * explicit skip.
+   */
+  const startPanVerification = async () => {
+    if (loading) return;
+    setUnavailableDoc(null);
+    setVerificationDoc('pan');
+
+    const destination = {
+      pathname: PAN_PAGE_ROUTE,
+      params: { onboarding: '1' },
+    } as Href;
+
+    // A second visit only opens the page; it must not rewrite verification
+    // state that the first visit or the provider may have changed.
+    if (profileCreatedRef.current) {
+      router.push(destination);
+      return;
+    }
+
+    await finalizeProfile({
+      document: 'pan',
+      // No KYC session exists yet, so the honest starting state is unverified.
+      // create-kyc-session moves it to 'pending' once a real form is created,
+      // and only the provider webhook may make it 'verified'.
+      status: 'not_verified',
+      announceSuccess: false,
+      destination,
+      navigation: 'push',
+    });
+  };
+
+  /**
+   * Same shared decision as the other verification screens: PAN goes to the
+   * hosted flow, while Aadhaar and driving licence explain that they are
+   * unavailable and offer PAN instead. They are never recorded as a choice.
+   */
+  const handleVerificationOptionPress = (key: VerificationDocument) => {
+    const action = actionForDocument(key);
+    if (!action) return;
+    if (action.type === 'show_unavailable') {
+      setUnavailableDoc(action.docType);
+      return;
+    }
+    void startPanVerification();
   };
 
   const getBgImage = (currentStep: number) => {
@@ -622,7 +737,7 @@ export default function AccountCreation() {
                     <Pressable
                       key={o.key}
                       testID={`verify-option-${o.key}`}
-                      onPress={() => setVerificationDoc(o.key)}
+                      onPress={() => handleVerificationOptionPress(o.key)}
                       style={[styles.optionRow, isSel && styles.optionRowActive]}
                     >
                       <View style={[styles.optionIcon, isSel && styles.optionIconActive]}>
@@ -636,9 +751,13 @@ export default function AccountCreation() {
                         <Text style={styles.optionLabel}>{o.label}</Text>
                         <Text style={styles.optionSub}>{o.sub}</Text>
                       </View>
-                      <View style={[styles.radio, isSel && styles.radioActive]}>
-                        {isSel && <View style={styles.radioInner} />}
-                      </View>
+                      {o.key === 'pan' ? (
+                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                      ) : (
+                        <View style={styles.unavailableTag}>
+                          <Text style={styles.unavailableTagText}>Unavailable</Text>
+                        </View>
+                      )}
                     </Pressable>
                   );
                 })}
@@ -678,8 +797,8 @@ export default function AccountCreation() {
         ) : (
           <PrimaryButton
             testID="account-continue"
-            title={loading ? 'Completing...' : 'Complete Profile'}
-            iconRight={loading ? undefined : 'checkmark-circle'}
+            title={loading ? 'Saving...' : 'Continue'}
+            iconRight={loading ? undefined : 'arrow-forward'}
             disabled={!canFinalize || loading}
             onPress={handleComplete}
           />
@@ -702,6 +821,13 @@ export default function AccountCreation() {
           </View>
         </View>
       </Modal>
+
+      <VerificationUnavailableModal
+        visible={unavailableDoc !== null}
+        docType={unavailableDoc}
+        onVerifyWithPan={() => { void startPanVerification(); }}
+        onSkip={() => setUnavailableDoc(null)}
+      />
     </SafeAreaView>
   );
 
@@ -1020,9 +1146,13 @@ const styles = StyleSheet.create({
   optionIconActive: { backgroundColor: colors.primary },
   optionLabel: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium },
   optionSub: { fontSize: font.size.xs, color: colors.textSecondary, marginTop: 2 },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  radioActive: { borderColor: colors.primary },
-  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+  unavailableTag: {
+    backgroundColor: colors.warningLight,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  unavailableTagText: { fontSize: font.size.xs, color: colors.warning, fontWeight: font.weight.medium },
 
   safeBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primaryLight, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },
   safeTitle: { fontSize: font.size.sm, color: colors.textPrimary, fontWeight: font.weight.medium },

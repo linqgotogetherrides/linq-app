@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Switch, Pressable, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 
 import LinqHeader from '@/src/components/LinqHeader';
 import EmergencyContactManager from '@/src/components/sos/EmergencyContactManager';
@@ -29,7 +29,7 @@ export default function Safety() {
         <View style={styles.card}>
           <Pressable
             style={styles.row}
-            onPress={() => router.push('/sos/confirm')}
+            onPress={() => router.push('/sos/countdown' as Href)}
             testID="safety-open-sos"
           >
             <View style={[styles.iconBox, styles.iconBoxDanger]}>
@@ -37,7 +37,7 @@ export default function Safety() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Activate SOS</Text>
-              <Text style={styles.sub}>Share live location and alert your contacts</Text>
+              <Text style={styles.sub}>25 second countdown, evidence and WhatsApp alert</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </Pressable>
@@ -64,7 +64,7 @@ export default function Safety() {
               <Ionicons name="people-outline" size={20} color={colors.primary} />
             </View>
             <Text style={styles.contactIntroText}>
-              These contacts are alerted by SMS or email the moment you activate SOS.
+              The contact with a phone number receives the WhatsApp SOS message.
             </Text>
           </View>
           <EmergencyContactManager />

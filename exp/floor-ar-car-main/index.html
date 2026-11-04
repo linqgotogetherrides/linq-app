@@ -1,0 +1,234 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crave Nation Floor AR Car</title>
+<style>
+  body { margin:0; font-family:Arial; background:#17151f; color:white; }
+  #hud {
+    position:fixed; z-index:2; top:0; left:0; right:0;
+    padding:14px; text-align:center; background:#17151fe8;
+  }
+  h2 { color:#f5bd57; margin:4px; }
+  p { margin:8px; font-size:14px; }
+  button {
+    padding:12px 16px; margin:4px; border:0; border-radius:10px;
+    background:#f5bd57; color:#17151f; font-weight:bold;
+  }
+  #status { color:#e4d8f6; }
+  #ar-button {
+    position:fixed; z-index:3; bottom:24px; left:50%;
+    transform:translateX(-50%); font-size:16px;
+  }
+  #drive-controls {
+    position:fixed; z-index:2; bottom:85px; left:0; right:0;
+    text-align:center; display:none;
+  }
+</style>
+</head>
+<body>
+<div id="hud">
+  <h2>🚗 Crave Nation AR Lab</h2>
+  <p>Start AR, scan the floor, then tap to place your car.</p>
+  <div id="status">Ready to start.</div>
+</div>
+
+<button id="ar-button">START FLOOR AR</button>
+<div id="drive-controls">
+  <button id="drive">▶ DRIVE</button>
+  <button id="stop">■ STOP</button>
+  <button id="turn">↻ TURN</button>
+</div>
+
+<script type="module">
+import * as THREE from
+  'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+import { ARButton } from
+  'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/webxr/ARButton.js';
+
+const status = document.querySelector('#status');
+const arButton = document.querySelector('#ar-button');
+const controls = document.querySelector('#drive-controls');
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 30);
+
+const renderer = new THREE.WebGLRenderer({
+  antialias:true, alpha:true
+});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.xr.enabled = true;
+renderer.setClearColor(0x000000,0);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x777788,2));
+const light = new THREE.DirectionalLight(0xffffff,2);
+light.position.set(1,4,2);
+scene.add(light);
+
+// Build a small genuine 3D car from shapes.
+const car = new THREE.Group();
+function addBox(parent, size, color, pos) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(...size),
+    new THREE.MeshStandardMaterial({color, roughness:0.35, metalness:0.15})
+  );
+  mesh.position.set(...pos);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+addBox(car,[0.85,0.22,0.42],0x7048ff,[0,0.20,0]);
+addBox(car,[0.43,0.22,0.34],0x9c86ff,[-0.06,0.40,0]);
+addBox(car,[0.31,0.12,0.35],0x8ee8ff,[0.00,0.42,0]);
+addBox(car,[0.07,0.08,0.43],0x222222,[0.43,0.13,0]);
+
+const wheels=[];
+for (const x of [-0.27,0.28]) {
+  for (const z of [-0.23,0.23]) {
+    const wheel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.105,0.105,0.07,24),
+      new THREE.MeshStandardMaterial({color:0x17171b,roughness:0.85})
+    );
+    wheel.rotation.x = Math.PI/2;
+    wheel.position.set(x,0.11,z);
+    car.add(wheel);
+    wheels.push(wheel);
+  }
+}
+car.visible = false;
+scene.add(car);
+
+// Reticle follows detected real surfaces.
+const reticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.10,0.14,32),
+  new THREE.MeshBasicMaterial({color:0xf5bd57})
+);
+reticle.rotation.x = -Math.PI/2;
+reticle.matrixAutoUpdate = false;
+reticle.visible = false;
+scene.add(reticle);
+
+let hitSource = null;
+let placed = false;
+let driving = false;
+let turning = false;
+let lastTime = 0;
+
+const controller = renderer.xr.getController(0);
+controller.addEventListener('select', () => {
+  if (reticle.visible) {
+    car.position.setFromMatrixPosition(reticle.matrix);
+    car.position.y += 0.02;
+    car.visible = true;
+    placed = true;
+    status.textContent = 'Car placed! Tap DRIVE.';
+    controls.style.display = 'block';
+  } else {
+    status.textContent = 'No surface yet. Slowly scan the floor.';
+  }
+});
+scene.add(controller);
+
+const button = ARButton.createButton(renderer, {
+  requiredFeatures:['hit-test'],
+  optionalFeatures:['dom-overlay'],
+  domOverlay:{root:document.body}
+});
+button.style.display='none';
+document.body.appendChild(button);
+
+arButton.onclick = async () => {
+  if (!navigator.xr) {
+    status.textContent = 'WebXR is unavailable in this browser/device.';
+    return;
+  }
+  try {
+    const supported = await navigator.xr.isSessionSupported('immersive-ar');
+    if (!supported) {
+      status.textContent = 'This phone/browser does not support WebXR AR.';
+      return;
+    }
+    button.click();
+  } catch (e) {
+    status.textContent = 'AR could not start: ' + e.message;
+  }
+};
+
+renderer.xr.addEventListener('sessionstart', () => {
+  status.textContent = 'Move your phone slowly to scan the floor.';
+  arButton.style.display='none';
+  hitSource = null;
+  placed = false;
+  car.visible = false;
+});
+renderer.xr.addEventListener('sessionend', () => {
+  status.textContent = 'AR session ended. Tap START FLOOR AR to try again.';
+  arButton.style.display='block';
+  controls.style.display='none';
+  hitSource = null;
+});
+
+document.querySelector('#drive').onclick = () => {
+  if (!placed) return status.textContent='Place the car on the floor first.';
+  driving = true;
+  turning = false;
+  status.textContent = 'Driving forward!';
+};
+document.querySelector('#stop').onclick = () => {
+  driving = false;
+  turning = false;
+  status.textContent = 'Car stopped.';
+};
+document.querySelector('#turn').onclick = () => {
+  turning = !turning;
+  driving = false;
+  status.textContent = turning ? 'Turning car in place.' : 'Turn stopped.';
+};
+
+renderer.setAnimationLoop((time, frame) => {
+  if (frame) {
+    const session = renderer.xr.getSession();
+    const refSpace = renderer.xr.getReferenceSpace();
+    if (!hitSource && session) {
+      session.requestReferenceSpace('viewer').then(viewer =>
+        session.requestHitTestSource({space:viewer})
+      ).then(source => { hitSource = source; })
+       .catch(err => { status.textContent='Hit test unavailable: '+err.message; });
+    }
+    if (hitSource) {
+      const results = frame.getHitTestResults(hitSource);
+      if (results.length) {
+        const pose = results[0].getPose(refSpace);
+        reticle.visible = true;
+        reticle.matrix.fromArray(pose.transform.matrix);
+      } else {
+        reticle.visible = false;
+      }
+    }
+  }
+
+  const dt = lastTime ? Math.min((time-lastTime)/1000,0.05) : 0;
+  lastTime = time;
+  if (driving && placed) {
+    // Move a small distance in the car's forward direction.
+    car.position.x += Math.sin(car.rotation.y) * dt * 0.35;
+    car.position.z += Math.cos(car.rotation.y) * dt * 0.35;
+    wheels.forEach(w => w.rotation.z += dt * 5);
+  }
+  if (turning && placed) car.rotation.y += dt * 1.2;
+  renderer.render(scene,camera);
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

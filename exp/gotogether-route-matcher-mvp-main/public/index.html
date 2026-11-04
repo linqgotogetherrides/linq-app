@@ -1,0 +1,4364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GoTogether — First match the journeys. Then solve the ride.</title>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Leaflet & MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+
+  <!-- Firebase Cloud Messaging (FCM) SDK & Registration Layer -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/js/fcm.js" defer></script>
+
+  <style>
+    :root {
+      --bg-page: #f8fafc;
+      --surface-card: #ffffff;
+      --surface-subtle: #f1f5f9;
+      --surface-hero: #f0f6ff;
+      --text-heading: #0f172a;
+      --text-body: #334155;
+      --text-muted: #64748b;
+      --text-light: #94a3b8;
+      --border-color: #e2e8f0;
+      --border-focus: #1d4ed8;
+      
+      /* STRICT GOLOGETHER COLOR SEMANTICS */
+      --route-my: #1d4ed8;            /* Blue: My route & primary UI */
+      --route-my-light: #eff6ff;
+      --route-their: #ea580c;         /* Orange: Their route ONLY on map */
+      --route-shared: #059669;        /* Green: Together / Shared route ONLY on map */
+      
+      --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 4px 14px -2px rgba(15, 23, 42, 0.06);
+      --shadow-lg: 0 12px 24px -4px rgba(15, 23, 42, 0.08);
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      width: 100%;
+      min-height: 100%;
+      overflow-x: hidden;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-page);
+      background-image: radial-gradient(circle at 50% 0%, #eff6ff 0%, #f8fafc 75%);
+      color: var(--text-body);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* NAVBAR HEADER */
+    .navbar {
+      background: #ffffff;
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-heading);
+    }
+
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      background: var(--route-my);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      flex-shrink: 0;
+    }
+
+    .brand-icon svg {
+      width: 22px;
+      height: 22px;
+      stroke: currentColor;
+      stroke-width: 2.2;
+      fill: none;
+    }
+
+    .brand-text-container {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-name {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text-heading);
+      line-height: 1.1;
+    }
+
+    .brand-tagline {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: -0.01em;
+    }
+
+    .btn-trips-modal {
+      height: 40px;
+      padding: 0 16px;
+      border: 1px solid var(--border-color);
+      background: #ffffff;
+      color: var(--text-heading);
+      border-radius: 20px;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .btn-trips-modal:hover {
+      background: var(--surface-subtle);
+      border-color: #cbd5e1;
+    }
+
+    .badge-count {
+      background: var(--route-my);
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 10px;
+      display: inline-block;
+    }
+
+    /* MAIN APP CONTAINER */
+    .app-main {
+      max-width: 920px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+      flex: 1;
+    }
+
+    /* SINGLE COLUMN CENTRAL CONTAINER */
+    .app-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* RIDE PLANNING CARD */
+    .planner-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 28px 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .planner-header {
+      margin-bottom: 20px;
+    }
+
+    .planner-title {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text-heading);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-transform: uppercase;
+    }
+
+    .planner-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-top: 4px;
+    }
+
+    .form-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .field {
+      position: relative;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      color: var(--text-light);
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .input-icon svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2.2;
+    }
+
+    .input-clear-btn {
+      position: absolute;
+      right: 12px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: none;
+      background: var(--surface-subtle);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+
+    .input-clear-btn:hover {
+      background: #cbd5e1;
+      color: var(--text-heading);
+    }
+
+    input[type="text"], input[type="date"], input[type="time"] {
+      width: 100%;
+      height: 44px;
+      padding: 0 40px 0 42px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-family: inherit;
+      font-size: 14px;
+      color: var(--text-heading);
+      background: #ffffff;
+      outline: none;
+      transition: all 0.15s ease;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="date"], input[type="time"] {
+      padding-left: 40px;
+      padding-right: 14px;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
+    }
+
+    /* USER ROUTE SUMMARY BAR */
+    .user-route-summary-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--surface-hero);
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      color: var(--text-heading);
+    }
+
+    .user-route-summary-bar .summary-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-edit-route {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      color: var(--route-my);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-edit-route:hover {
+      background: var(--surface-subtle);
+      border-color: #bfdbfe;
+    }
+
+    .flexibility-select {
+      width: 100%;
+      height: 44px;
+      padding: 0 14px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-heading);
+      background: #ffffff;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .field-row-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 440px) {
+      .field-row-split {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* TRAVEL DAYS PILLS */
+    .days-pill-group {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .day-pill {
+      flex: 1;
+      min-width: 38px;
+      height: 36px;
+      border: 1px solid var(--border-color);
+      background: #ffffff;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+
+    .day-pill.active {
+      background: var(--route-my-light);
+      color: var(--route-my);
+      border-color: #bfdbfe;
+    }
+
+    /* TOGGLE SWITCH ROW */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--bg-page);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+    }
+
+    .toggle-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .toggle-label-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+
+    .toggle-label-sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #cbd5e1;
+      transition: .2s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .2s;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    input:checked + .slider {
+      background-color: var(--route-my);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    /* VEHICLE PREFERENCE SEGMENTED PILLS */
+    .segmented-group {
+      display: flex;
+      background: var(--bg-page);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      gap: 4px;
+    }
+
+    .segment-btn, .radius-btn {
+      flex: 1;
+      height: 36px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .segment-btn.active, .radius-btn.active {
+      background: #ffffff;
+      color: var(--route-my);
+      box-shadow: var(--shadow-sm);
+      font-weight: 700;
+    }
+
+    /* AUTOCOMPLETE SUGGESTIONS POPUP */
+    .suggestions {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg);
+      z-index: 1000;
+      max-height: 260px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .suggestion-gps {
+      padding: 12px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--route-my-light);
+      color: var(--route-my);
+      font-weight: 700;
+      font-size: 13.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .suggestion-gps:hover {
+      background: #dbeafe;
+    }
+
+    .suggestion-status {
+      padding: 14px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .suggestion {
+      padding: 12px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-color);
+      transition: background 0.15s ease;
+    }
+
+    .suggestion:last-child {
+      border-bottom: none;
+    }
+
+    .suggestion:hover, .suggestion:active {
+      background: var(--surface-subtle);
+    }
+
+    .suggestion-main {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+
+    .suggestion-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ACTION BUTTONS */
+    .actions-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .btn-primary {
+      flex: 1;
+      height: 46px;
+      border: none;
+      background: var(--route-my);
+      color: #ffffff;
+      border-radius: var(--radius-md);
+      font-size: 14.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-primary:hover, .btn-primary:active {
+      background: #1e40af;
+    }
+
+    .btn-secondary {
+      height: 46px;
+      padding: 0 16px;
+      border: 1px solid var(--border-color);
+      background: #ffffff;
+      color: var(--text-muted);
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface-subtle);
+      color: var(--text-heading);
+    }
+
+    /* QUICK TIME CHIPS */
+    .time-quick-chips {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    .time-chip {
+      padding: 4px 10px;
+      font-size: 11.5px;
+      font-weight: 700;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: #ffffff;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .time-chip:hover {
+      background: var(--surface-hero);
+      color: var(--route-my);
+      border-color: #bfdbfe;
+    }
+
+    /* V1 INTEGRATED CHAT STYLES */
+    .chat-box-card {
+      margin-top: 14px;
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+
+    .chat-title-text {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-heading);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chat-messages-container {
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 4px;
+      background: var(--bg-page);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+    }
+
+    .chat-bubble {
+      max-width: 82%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.35;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chat-bubble-me {
+      align-self: flex-end;
+      background: var(--route-my);
+      color: #ffffff;
+      border-bottom-right-radius: 3px;
+    }
+
+    .chat-bubble-other {
+      align-self: flex-start;
+      background: #ffffff;
+      color: var(--text-heading);
+      border: 1px solid var(--border-color);
+      border-bottom-left-radius: 3px;
+    }
+
+    .chat-msg-sender {
+      font-size: 10.5px;
+      font-weight: 700;
+      margin-bottom: 2px;
+      opacity: 0.85;
+    }
+
+    .chat-msg-meta {
+      font-size: 10px;
+      align-self: flex-end;
+      margin-top: 4px;
+      opacity: 0.75;
+    }
+
+    .quick-messages-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 6px;
+    }
+
+    .quick-msg-label {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .quick-msg-chips-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .quick-msg-pill {
+      background: var(--surface-hero);
+      color: var(--route-my);
+      border: 1px solid #bfdbfe;
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+
+    .quick-msg-pill:hover, .quick-msg-pill:active {
+      background: var(--route-my);
+      color: #ffffff;
+      border-color: var(--route-my);
+    }
+
+    /* RIGHT COLUMN CONTAINERS */
+    .results-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* MAP CONTAINER */
+    .map-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+    }
+
+    #map {
+      width: 100%;
+      height: 360px;
+      background: #e2e8f0;
+    }
+
+    @media (max-width: 600px) {
+      #map {
+        height: 280px;
+      }
+    }
+
+    .map-legend {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 10px 16px;
+      background: #ffffff;
+      border-top: 1px solid var(--border-color);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-swatch {
+      width: 16px;
+      height: 4px;
+      border-radius: 2px;
+    }
+
+    /* RESULTS SECTION & CONTAINER */
+    .results-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+      display: none;
+    }
+
+    .results-header-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .results-top-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .results-heading {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text-heading);
+      letter-spacing: -0.02em;
+    }
+
+    .results-route-summary {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--route-my);
+    }
+
+    .results-subtext {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* CONTROLS ROW: FILTERS + SORT */
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .filter-pills {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .filter-btn {
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--border-color);
+      background: #ffffff;
+      color: var(--text-muted);
+      border-radius: 16px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .filter-btn.active {
+      background: var(--route-my-light);
+      color: var(--route-my);
+      border-color: #bfdbfe;
+      font-weight: 700;
+    }
+
+    .sort-select-wrapper {
+      position: relative;
+    }
+
+    .sort-select {
+      height: 32px;
+      padding: 0 28px 0 10px;
+      border: 1px solid var(--border-color);
+      background: #ffffff;
+      color: var(--text-heading);
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .sort-icon {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    /* REFERENCE-INSPIRED JOURNEY CARD DESIGN */
+    .journey-match-card {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .journey-match-card:hover {
+      border-color: #cbd5e1;
+      box-shadow: var(--shadow-md);
+    }
+
+    .journey-match-card.selected-card {
+      border-color: var(--route-my);
+      box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.15), var(--shadow-md);
+    }
+
+    /* 1. CARD HEADER: PERSON & META */
+    .card-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .person-profile-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .avatar-circle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: var(--text-heading);
+      font-size: 16px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .person-text-group {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .person-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .person-name {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text-heading);
+    }
+
+    .rating-badge {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--route-my);
+      background: var(--route-my-light);
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+
+    .rides-count-subtext {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .header-right-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .meta-time-vehicle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-body);
+      font-weight: 600;
+    }
+
+    .meta-divider {
+      color: var(--border-color);
+    }
+
+    .btn-share-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 1px solid var(--border-color);
+      background: #ffffff;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-share-icon:hover {
+      background: var(--surface-subtle);
+      color: var(--text-heading);
+      border-color: #cbd5e1;
+    }
+
+    /* 2. ROUTE HERO CONTAINER */
+    .route-hero-card {
+      background: var(--surface-hero);
+      border: 1px solid #e0ebff;
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 12px;
+    }
+
+    @media (max-width: 580px) {
+      .route-hero-card {
+        grid-template-columns: 1fr;
+        gap: 14px;
+        text-align: center;
+      }
+    }
+
+    .hero-point {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hero-drop {
+      justify-content: flex-end;
+    }
+
+    @media (max-width: 580px) {
+      .hero-drop {
+        justify-content: center;
+      }
+      .hero-pickup {
+        justify-content: center;
+      }
+    }
+
+    .hero-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 0 2px var(--route-my);
+      background: var(--route-my);
+      flex-shrink: 0;
+    }
+
+    .hero-point-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .point-main-name {
+      font-size: 14.5px;
+      font-weight: 800;
+      color: var(--text-heading);
+    }
+
+    .point-sub-name {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .hero-line-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 160px;
+    }
+
+    .shared-distance-badge {
+      background: #dbeafe;
+      color: var(--route-my);
+      font-size: 13px;
+      font-weight: 800;
+      padding: 4px 14px;
+      border-radius: 14px;
+      white-space: nowrap;
+      box-shadow: 0 1px 2px rgba(29, 78, 216, 0.08);
+    }
+
+    .hero-connecting-line {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+
+    .line-track {
+      flex: 1;
+      height: 3px;
+      background: #93c5fd;
+      border-radius: 2px;
+    }
+
+    .line-dot-left, .line-dot-right {
+      width: 6px;
+      height: 6px;
+      background: var(--route-my);
+      border-radius: 50%;
+    }
+
+    .shared-route-subtext {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    /* 3. MEETING POINT BOX */
+    .meeting-point-card {
+      background: var(--bg-page);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13.5px;
+    }
+
+    .meeting-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .meeting-pin-icon {
+      font-size: 16px;
+      color: var(--route-my);
+    }
+
+    .meeting-text-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .meeting-label {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .meeting-place-name {
+      color: var(--text-heading);
+      font-weight: 800;
+    }
+
+    .meeting-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    /* 4. CARD ACTION BUTTONS */
+    .card-actions-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-card-view-route {
+      height: 44px;
+      padding: 0 18px;
+      border: 1px solid #bfdbfe;
+      background: #ffffff;
+      color: var(--route-my);
+      border-radius: var(--radius-md);
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .btn-card-view-route:hover {
+      background: var(--route-my-light);
+    }
+
+    .btn-card-request-ride {
+      flex: 1;
+      height: 44px;
+      border: none;
+      background: var(--route-my);
+      color: #ffffff;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .btn-card-request-ride:hover {
+      background: #1e40af;
+    }
+
+    .btn-card-request-ride.sent {
+      background: var(--route-shared-bg);
+      color: var(--route-shared);
+      border: 1px solid #a7f3d0;
+      cursor: default;
+    }
+
+    /* MORE OPTIONS COLLAPSIBLE DRAWER */
+    .btn-more-options {
+      width: 100%;
+      height: 38px;
+      background: var(--surface-subtle);
+      border: 1px dashed var(--border-color);
+      color: var(--route-my);
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      margin-top: 4px;
+    }
+
+    .btn-more-options:hover {
+      background: var(--route-my-light);
+      border-color: #bfdbfe;
+    }
+
+    .more-options-box {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 16px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      margin-top: 6px;
+    }
+
+    /* SCHEDULE DIFFERENT BADGE */
+    .schedule-diff-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 12px;
+      white-space: nowrap;
+    }
+
+    /* DISCOVERY ROUTE LOADING CARD */
+    .discovery-loading-card {
+      background: #ffffff;
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius-lg);
+      padding: 24px 20px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .discovery-loading-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .spinner-sm {
+      width: 22px;
+      height: 22px;
+      border: 3px solid #bfdbfe;
+      border-top-color: var(--route-my);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .discovery-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text-heading);
+    }
+
+    .discovery-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-left: 34px;
+    }
+
+    .discovery-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .step-done {
+      color: var(--route-shared);
+      font-weight: 700;
+    }
+
+    .step-check {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--route-shared);
+    }
+
+    .step-active {
+      color: var(--route-my);
+      font-weight: 700;
+    }
+
+    .step-pulse {
+      color: var(--route-my);
+      animation: pulseDot 1s infinite alternate;
+    }
+
+    @keyframes pulseDot {
+      from { opacity: 0.3; }
+      to { opacity: 1; }
+    }
+
+    /* NO-MATCH EXPERIENCE CARD */
+    .no-match-card {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 32px 24px;
+      text-align: center;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .no-match-icon {
+      font-size: 36px;
+    }
+
+    .no-match-title {
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--text-heading);
+      letter-spacing: -0.01em;
+    }
+
+    .no-match-sub {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .no-match-highlight {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--route-my);
+      background: var(--route-my-light);
+      padding: 8px 16px;
+      border-radius: 20px;
+      border: 1px solid #bfdbfe;
+    }
+
+    /* MODALS */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.4);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    @media (max-width: 640px) {
+      .modal-overlay {
+        align-items: flex-end;
+        padding: 0;
+      }
+    }
+
+    .modal-card {
+      background: #ffffff;
+      border-radius: var(--radius-lg);
+      max-width: 480px;
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 24px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+    }
+
+    @media (max-width: 640px) {
+      .modal-card {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        max-height: 90vh;
+      }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text-heading);
+    }
+
+    .btn-close-modal {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 1px solid var(--border-color);
+      background: #ffffff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .confirm-summary-box {
+      background: var(--bg-page);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .confirm-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13.5px;
+      margin-bottom: 8px;
+    }
+
+    .confirm-label { color: var(--text-muted); font-weight: 600; }
+    .confirm-val { color: var(--text-heading); font-weight: 700; text-align: right; }
+
+    /* TRIPS MODAL TABS */
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 16px;
+      gap: 16px;
+    }
+
+    .tab-item {
+      padding: 8px 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+
+    .tab-item.active {
+      color: var(--route-my);
+      border-bottom-color: var(--route-my);
+    }
+
+    .request-card {
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      margin-bottom: 10px;
+      background: var(--bg-page);
+    }
+
+    .request-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+
+    .btn-action-accept {
+      background: var(--route-shared);
+      color: #fff;
+      border: none;
+      height: 34px;
+      padding: 0 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-action-reject {
+      background: #e11d48;
+      color: #fff;
+      border: none;
+      height: 34px;
+      padding: 0 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* FOOTER */
+    .footer {
+      text-align: center;
+      padding: 24px 16px;
+      font-size: 12.5px;
+      color: var(--text-light);
+      margin-top: auto;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- NAVBAR HEADER -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="#" class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+            <circle cx="12" cy="9" r="2.5"/>
+          </svg>
+        </div>
+        <div class="brand-text-container">
+          <span class="brand-name">GoTogether</span>
+          <span class="brand-tagline">Same routes. Brighter days.</span>
+        </div>
+      </a>
+      <div class="nav-actions" style="display:flex; gap:8px; align-items:center;">
+        <button id="btnNotificationsModal" class="btn-trips-modal" style="display:inline-flex;">
+          <span>🔔</span>
+          <span id="notificationBadge" class="badge-count" style="display:none;">0</span>
+        </button>
+        <button id="btnConversationsModal" class="btn-trips-modal" style="display:inline-flex;">
+          <span>💬 Chats</span>
+        </button>
+        <button id="btnTripsModal" class="btn-trips-modal">
+          <span>🚗 My Rides</span>
+          <span id="tripsCountBadge" class="badge-count" style="display:none;">0</span>
+        </button>
+        <button id="btnAuthModal" class="btn-trips-modal" style="background:var(--route-my-light); color:var(--route-my); border-color:#bfdbfe;">
+          <span id="authBtnLabel">Sign In</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="app-main">
+
+    <div class="app-grid">
+
+      <!-- LEFT COLUMN: YOUR COMMUTE PLANNER -->
+      <section class="planner-card">
+        <div class="planner-header">
+          <h1 class="planner-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--route-my)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Your Commute
+          </h1>
+          <p class="planner-subtitle">Tell us your route and we'll find people going your way.</p>
+        </div>
+
+        <div class="form-grid">
+
+          <!-- NAME FIELD -->
+          <div class="field">
+            <label class="field-label" for="name">Your Name</label>
+            <div class="input-wrapper">
+              <div class="input-icon">
+                <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <input id="name" type="text" placeholder="Enter your name..." autocomplete="off">
+            </div>
+          </div>
+
+          <!-- PICKUP -->
+          <div class="field">
+            <label class="field-label" for="pickup">Pickup</label>
+            <div class="input-wrapper">
+              <div class="input-icon">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+              </div>
+              <input id="pickup" type="text" placeholder="Search area or landmark..." autocomplete="off">
+              <button type="button" class="input-clear-btn" id="pickupClear" style="display:none;" title="Clear">✕</button>
+            </div>
+            <div id="pickupSuggestions" class="suggestions"></div>
+          </div>
+
+          <!-- DROP -->
+          <div class="field">
+            <label class="field-label" for="drop">Drop</label>
+            <div class="input-wrapper">
+              <div class="input-icon">
+                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              </div>
+              <input id="drop" type="text" placeholder="Search destination area..." autocomplete="off">
+              <button type="button" class="input-clear-btn" id="dropClear" style="display:none;" title="Clear">✕</button>
+            </div>
+            <div id="dropSuggestions" class="suggestions"></div>
+          </div>
+
+          <!-- EMBEDDED REAL LEAFLET MAP CARD -->
+          <section class="map-card" id="mapCard">
+            <div id="userRouteSummaryCard" class="user-route-summary-bar">
+              <div class="summary-left">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--route-my)" stroke-width="2.2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+                <span id="userRouteSummaryText">Select pickup and drop to see your route.</span>
+              </div>
+              <button type="button" id="btnEditRoute" class="btn-edit-route">Edit route</button>
+            </div>
+            <div id="map"></div>
+          </section>
+
+          <!-- TRAVEL DAYS PILLS -->
+          <div class="field">
+            <label class="field-label">When do you usually travel?</label>
+            <div class="days-pill-group" id="daysPillGroup">
+              <button type="button" class="day-pill active" data-day="Mon">Mon</button>
+              <button type="button" class="day-pill active" data-day="Tue">Tue</button>
+              <button type="button" class="day-pill active" data-day="Wed">Wed</button>
+              <button type="button" class="day-pill active" data-day="Thu">Thu</button>
+              <button type="button" class="day-pill active" data-day="Fri">Fri</button>
+              <button type="button" class="day-pill" data-day="Sat">Sat</button>
+              <button type="button" class="day-pill" data-day="Sun">Sun</button>
+            </div>
+          </div>
+
+          <!-- TRAVEL TIME & FLEXIBILITY -->
+          <div class="field-row-split">
+            <div class="field">
+              <label class="field-label" for="departureTime">Departure Time</label>
+              <div class="input-wrapper">
+                <div class="input-icon">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+                <input id="departureTime" type="time" value="08:30">
+              </div>
+              <div class="time-quick-chips">
+                <button type="button" class="time-chip" onclick="setDepartureTime('08:00')">08:00 AM</button>
+                <button type="button" class="time-chip" onclick="setDepartureTime('08:30')">08:30 AM</button>
+                <button type="button" class="time-chip" onclick="setDepartureTime('09:00')">09:00 AM</button>
+                <button type="button" class="time-chip" onclick="setDepartureTime('17:30')">05:30 PM</button>
+                <button type="button" class="time-chip" onclick="setDepartureTime('18:00')">06:00 PM</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label" for="flexibilitySelect">Time Flexibility</label>
+              <select id="flexibilitySelect" class="flexibility-select">
+                <option value="15">± 15 mins</option>
+                <option value="30" selected>± 30 mins</option>
+                <option value="45">± 45 mins</option>
+                <option value="60">± 60 mins</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- + MORE OPTIONS TOGGLE & COLLAPSIBLE CONTAINER -->
+          <div>
+            <button type="button" id="btnToggleMoreOptions" class="btn-more-options">
+              <span>+ More options</span>
+            </button>
+
+            <div id="moreOptionsDrawer" class="more-options-box" style="display: none;">
+              <!-- STARTING DATE -->
+              <div class="field">
+                <label class="field-label" for="departureDate">Starting From</label>
+                <div class="input-wrapper">
+                  <div class="input-icon">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  </div>
+                  <input id="departureDate" type="date">
+                </div>
+              </div>
+
+              <!-- RETURN JOURNEY TOGGLE -->
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <span class="toggle-label-title">Return journey</span>
+                  <span class="toggle-label-sub">Match both onward & return commute</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="returnJourneyToggle">
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              <!-- VEHICLE PREFERENCE -->
+              <div class="field">
+                <label class="field-label">What's your ride?</label>
+                <div class="segmented-group" id="vehicleSegmentedGroup">
+                  <button type="button" class="segment-btn active" data-vehicle="Any">Any</button>
+                  <button type="button" class="segment-btn" data-vehicle="Car">Car</button>
+                  <button type="button" class="segment-btn" data-vehicle="Bike">Bike</button>
+                  <button type="button" class="segment-btn" data-vehicle="Scooter">Scooter</button>
+                </div>
+              </div>
+
+              <!-- SEARCH RADIUS SEGMENT (HUMAN WORDING) -->
+              <div class="field">
+                <label class="field-label">How far can you travel to meet?</label>
+                <div class="segmented-group">
+                  <button type="button" class="radius-btn" data-radius="2">2 km</button>
+                  <button type="button" class="radius-btn active" data-radius="5">5 km</button>
+                  <button type="button" class="radius-btn" data-radius="10">10 km</button>
+                  <button type="button" class="radius-btn" data-radius="15">15 km</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ACTION BUTTONS -->
+          <div class="actions-row">
+            <button id="find" class="btn-primary" type="button">
+              <span>Find people going your way →</span>
+            </button>
+            <button id="clear" class="btn-secondary" type="button">Clear</button>
+          </div>
+
+          <!-- TRUST / PRIVACY NOTE -->
+          <p style="font-size: 11.5px; color: var(--text-muted); text-align: center; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 5px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span>Your data is safe with us. We only use it to find better matches.</span>
+          </p>
+
+        </div>
+      </section>
+
+      <!-- ROUTE CONVERGENCE & MATCH RESULTS CONTAINER -->
+      <section class="results-card" id="results">
+
+          <!-- HEADER & ROUTE SUMMARY (SINGLE CLEAN RESULTS STREAM) -->
+          <div class="results-header-bar">
+            <div class="results-top-info">
+              <h2 class="results-heading">People going your way</h2>
+              <div id="resultsRouteSummary" class="results-route-summary"></div>
+              <span id="telemetryChip" class="results-subtext"></span>
+            </div>
+          </div>
+
+          <!-- RESULTS LIST CONTAINER -->
+          <div id="resultsList"></div>
+
+        </section>
+
+    </div>
+
+  </main>
+
+  <!-- CONFIRMATION SHEET / MODAL FOR REQUEST TO RIDE TOGETHER -->
+  <div id="confirmModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Request to ride together</h3>
+        <button class="btn-close-modal" id="btnCloseConfirm">✕</button>
+      </div>
+
+      <div class="confirm-summary-box" id="confirmSummaryBox"></div>
+
+      <div class="actions-row">
+        <button id="btnSendJoinRequest" class="btn-primary" type="button">Send Request</button>
+        <button id="btnCancelJoinRequest" class="btn-secondary" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHARE JOURNEY MODAL (FALLBACK) -->
+  <div id="shareModal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Share journey</h3>
+        <button class="btn-close-modal" id="btnCloseShare">✕</button>
+      </div>
+      <p style="font-size: 13.5px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.4;">
+        Share this route match with friends or commuters:
+      </p>
+      <div class="input-wrapper" style="margin-bottom: 14px;">
+        <input id="shareUrlInput" type="text" readonly style="padding: 0 12px; font-size: 13px;">
+      </div>
+      <div class="actions-row">
+        <button id="btnCopyShareLink" class="btn-primary" type="button">Copy link</button>
+        <button id="btnWhatsAppShare" class="btn-secondary" type="button">WhatsApp</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MY TRIPS & REQUESTS MODAL -->
+  <div id="tripsModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">My Trips & Requests</h3>
+        <button class="btn-close-modal" id="btnCloseTrips">✕</button>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab-item active" data-tab="received">Requests Received</div>
+        <div class="tab-item" data-tab="sent">Requests Sent</div>
+      </div>
+
+      <div id="tripsModalContent">
+        <p style="color: var(--text-muted); font-size: 14px; text-align: center; padding: 20px 0;">Loading requests...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFICATIONS MODAL -->
+  <div id="notificationsModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">🔔 Notifications</h3>
+        <button class="btn-close-modal" id="btnCloseNotifications">✕</button>
+      </div>
+      <div id="notificationsModalContent">
+        <p style="color: var(--text-muted); font-size: 14px; text-align: center; padding: 20px 0;">Loading notifications...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIGN IN / AUTH MODAL (MANDATORY REAL SUPABASE AUTH) -->
+  <div id="authModal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 400px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Sign In to GoTogether</h3>
+        <button class="btn-close-modal" id="btnCloseAuth">✕</button>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+        Sign in to create journeys, send ride requests, and chat with matched commuters.
+      </p>
+
+      <button id="btnGoogleAuth" class="btn-primary" type="button" style="background:#4285f4; margin-bottom:16px; width:100%; display:flex; align-items:center; justify-content:center; gap:8px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#fff"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#fff"/></svg>
+        <span>Sign in with Google</span>
+      </button>
+
+      <div style="text-align:center; font-size:12px; color:var(--text-muted); margin-bottom:14px; position:relative;">
+        <span style="background:#fff; padding:0 8px; position:relative; z-index:1;">or sign in with email</span>
+        <div style="position:absolute; top:50%; left:0; right:0; height:1px; background:var(--border-color); z-index:0;"></div>
+      </div>
+
+      <div class="form-grid">
+        <div class="field">
+          <label class="field-label" for="authEmail">Email Address</label>
+          <input id="authEmail" type="email" placeholder="name@example.com" autocomplete="email">
+        </div>
+        <div class="field">
+          <label class="field-label" for="authPassword">Password</label>
+          <input id="authPassword" type="password" placeholder="Enter password..." autocomplete="current-password">
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button id="btnSubmitAuthSignIn" class="btn-primary" type="button" style="flex:1;">Sign In</button>
+          <button id="btnSubmitAuthSignUp" class="btn-secondary" type="button" style="flex:1;">Sign Up</button>
+        </div>
+        <div id="authStatusMsg" style="font-size:12px; color:var(--text-muted); text-align:center; margin-top:8px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER CONVERSATIONS MODAL -->
+  <div id="conversationsModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">💬 Ride Conversations</h3>
+        <button class="btn-close-modal" id="btnCloseConversations">✕</button>
+      </div>
+      <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 12px;">
+        Restricted to accepted ride request participants.
+      </p>
+      <div id="conversationsModalContent">
+        <p style="color: var(--text-muted); font-size: 14px; text-align: center; padding: 20px 0;">Loading conversations...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <p>© 2026 <strong>GoTogether</strong> — First match the journeys. Then solve the ride.</p>
+  </footer>
+
+  <!-- Leaflet & MarkerCluster JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <script>
+    /*
+    ==================================================
+    GLOBAL STATE & INITIALIZATION
+    ==================================================
+    */
+
+    let map;
+    let selectedRadiusKm = 5;
+    let currentMatches = [];
+    let activeJourneysData = [];
+    let activeMatchIndex = 0;
+    let currentUserJourneyId = null;
+    let pendingRequestCandidate = null;
+
+    let activeFilter = "all";
+    let activeSort = "shared";
+    let selectedVehicle = "Any";
+    let selectedDays = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+
+    let routeALayer = null;
+    let routeBLayer = null;
+    let sharedLayer = null;
+    let meetingMarker = null;
+    let userPickupMarker = null;
+    let userDropMarker = null;
+    let candidatePickupMarker = null;
+    let candidateDropMarker = null;
+    let nearbyClusterGroup = null;
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    document.getElementById("departureDate").value = todayStr;
+
+    function formatDateDDMMYYYY(dateStr) {
+      if (!dateStr) return '';
+      if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+        const parts = dateStr.split('T')[0].split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+      }
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}/${month}/${year}`;
+      }
+      return dateStr;
+    }
+
+    function formatTime12H(timeStr) {
+      if (!timeStr) return '8:30 AM';
+      const parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        let hours = parseInt(parts[0], 10);
+        const minutes = parts[1];
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        return `${hours}:${minutes} ${ampm}`;
+      }
+      return timeStr;
+    }
+
+    let currentUserId = null;
+
+    function getStoredUserId() {
+      try {
+        return localStorage.getItem("gotogether_user_id");
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function setStoredUserId(id) {
+      try {
+        if (id) localStorage.setItem("gotogether_user_id", id);
+        else localStorage.removeItem("gotogether_user_id");
+      } catch (e) {}
+    }
+
+    currentUserId = getStoredUserId();
+
+    function getStoredActiveJourney() {
+      try {
+        const saved = localStorage.getItem("gotogether_active_journey");
+        return saved ? JSON.parse(saved) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function setStoredActiveJourney(journeyObj) {
+      try {
+        if (journeyObj) {
+          localStorage.setItem("gotogether_active_journey", JSON.stringify(journeyObj));
+          if (journeyObj.user_id) {
+            currentUserId = journeyObj.user_id;
+            setStoredUserId(currentUserId);
+          }
+        } else {
+          localStorage.removeItem("gotogether_active_journey");
+        }
+      } catch (e) {}
+    }
+
+    const initialStored = getStoredActiveJourney();
+    if (initialStored && initialStored.id) {
+      if (initialStored.departureDate && initialStored.departureDate < todayStr) {
+        setStoredActiveJourney(null);
+      } else {
+        currentUserJourneyId = initialStored.id;
+        if (initialStored.user_id) {
+          currentUserId = initialStored.user_id;
+        }
+      }
+    }
+
+    /*
+    ==================================================
+    LOCATION DISPLAY NAME NORMALIZATION (GENERIC)
+    ==================================================
+    */
+
+    function formatCleanArea(item) {
+      if (!item) return '';
+      let str = typeof item === 'string' ? item : (item.display_name || '');
+      if (!str && typeof item === 'object') {
+        const addr = item.address || {};
+        str = addr.suburb || addr.neighbourhood || addr.quarter || addr.city_district || addr.amenity || addr.road || addr.city || '';
+      }
+
+      if (!str) return '';
+
+      const rawParts = str.split(',').map(p => p.trim()).filter(Boolean);
+
+      const cleanParts = rawParts.filter(p => {
+        const hasNonAscii = /[^\x00-\x7F]/.test(p);
+        const isZip = /^\d{5,6}$/.test(p);
+        const isNoise = /^(India|Telangana|Andhra Pradesh)$/i.test(p) ||
+          /Municipal\s+Corporation|Greater\s+Hyderabad|GHMC/i.test(p) ||
+          /(East|West|North|South|Central)\s+Zone|Zone\s+\d+|Circle\s+\d+/i.test(p) ||
+          /\bmandal\b|\bdistrict\b|\bTehsil\b/i.test(p);
+        const isWard = /^Ward\s+\d+\s*/i.test(p);
+        return !hasNonAscii && !isZip && !isNoise && !isWard;
+      });
+
+      if (cleanParts.length >= 2) {
+        return `${cleanParts[0]}, ${cleanParts[1]}`;
+      } else if (cleanParts.length === 1) {
+        return cleanParts[0];
+      }
+
+      let fallback = rawParts[0] || str;
+      fallback = fallback.replace(/[^\x00-\x7F]/g, '').replace(/^Ward\s+\d+\s*/i, '').replace(/Greater\s+Hyderabad\s+Municipal\s+Corporation.*/i, '').trim();
+      return fallback || 'Hyderabad';
+    }
+
+    function formatMeetingPointText(display) {
+      if (!display) return '';
+      let clean = display.replace(/^Meet\s+near\s+/i, '').trim();
+      clean = formatCleanArea(clean);
+      return `Meet near ${clean}`;
+    }
+
+    /*
+    ==================================================
+    MAP INITIALIZATION
+    ==================================================
+    */
+
+    function initMap() {
+      map = L.map("map", { zoomControl: true }).setView([17.385, 78.4867], 11);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+
+      loadNearbyJourneys();
+      checkDeepLink();
+    }
+
+    document.addEventListener("DOMContentLoaded", initMap);
+
+    /*
+    ==================================================
+    TRAVEL DAYS & VEHICLE CONTROLS
+    ==================================================
+    */
+
+    document.querySelectorAll(".day-pill").forEach(pill => {
+      pill.addEventListener("click", function() {
+        const day = this.getAttribute("data-day");
+        if (this.classList.contains("active")) {
+          if (selectedDays.length > 1) {
+            this.classList.remove("active");
+            selectedDays = selectedDays.filter(d => d !== day);
+          }
+        } else {
+          this.classList.add("active");
+          selectedDays.push(day);
+        }
+      });
+    });
+
+    document.querySelectorAll(".segment-btn").forEach(btn => {
+      btn.addEventListener("click", function() {
+        document.querySelectorAll(".segment-btn").forEach(b => b.classList.remove("active"));
+        this.classList.add("active");
+        selectedVehicle = this.getAttribute("data-vehicle") || "Any";
+      });
+    });
+
+    document.querySelectorAll(".radius-btn").forEach(btn => {
+      btn.addEventListener("click", function() {
+        document.querySelectorAll(".radius-btn").forEach(b => b.classList.remove("active"));
+        this.classList.add("active");
+        selectedRadiusKm = Number(this.getAttribute("data-radius")) || 5;
+        loadNearbyJourneys();
+      });
+    });
+
+    /*
+    ==================================================
+    LOCATION AUTOCOMPLETE
+    ==================================================
+    */
+
+    function setupLocationAutocomplete(inputId, suggestionsId, clearBtnId, isPickup = false) {
+      const input = document.getElementById(inputId);
+      const suggestions = document.getElementById(suggestionsId);
+      const clearBtn = document.getElementById(clearBtnId);
+      let debounceTimer = null;
+
+      function updateClearBtn() {
+        if (clearBtn) {
+          clearBtn.style.display = input.value.trim() ? "flex" : "none";
+        }
+      }
+
+      if (clearBtn) {
+        clearBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          input.value = "";
+          input.removeAttribute("data-lat");
+          input.removeAttribute("data-lon");
+          updateClearBtn();
+          suggestions.style.display = "none";
+          input.focus();
+        });
+      }
+
+      function renderGPSOption() {
+        if (!isPickup) return "";
+        return `
+          <div class="suggestion-gps" id="btnUseCurrentArea">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+            <span>Use my current area</span>
+          </div>
+        `;
+      }
+
+      input.addEventListener("focus", function() {
+        updateClearBtn();
+        if (!this.value.trim() && isPickup) {
+          suggestions.innerHTML = renderGPSOption();
+          suggestions.style.display = "block";
+          bindGPSEvent();
+        }
+      });
+
+      input.addEventListener("input", function() {
+        updateClearBtn();
+        clearTimeout(debounceTimer);
+        const query = this.value.trim();
+
+        if (!query) {
+          if (isPickup) {
+            suggestions.innerHTML = renderGPSOption();
+            suggestions.style.display = "block";
+            bindGPSEvent();
+          } else {
+            suggestions.style.display = "none";
+          }
+          return;
+        }
+
+        if (query.length < 2) return;
+
+        suggestions.innerHTML = (isPickup ? renderGPSOption() : "") + `
+          <div class="suggestion-status">
+            <span>Searching places...</span>
+          </div>
+        `;
+        suggestions.style.display = "block";
+        if (isPickup) bindGPSEvent();
+
+        debounceTimer = setTimeout(async () => {
+          try {
+            const hydViewbox = "78.2000,17.6000,78.7000,17.2000";
+            const boundedUrl = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=8&countrycodes=in&viewbox=${hydViewbox}&q=${encodeURIComponent(query)}`;
+            
+            let res = await fetch(boundedUrl, { headers: { "User-Agent": "GoTogether/1.0" } });
+            if (!res.ok) throw new Error("Search network error");
+            
+            let data = await res.json();
+
+            if (!data || !data.length) {
+              suggestions.innerHTML = (isPickup ? renderGPSOption() : "") + `
+                <div class="suggestion-status">No matching places found. Try a landmark or city.</div>
+              `;
+              if (isPickup) bindGPSEvent();
+              return;
+            }
+
+            const itemsHtml = data.map((item, idx) => {
+              const mainTitle = formatCleanArea(item);
+              const subTitle = item.display_name;
+              return `
+                <div class="suggestion" data-idx="${idx}">
+                  <div class="suggestion-main">${escapeHtml(mainTitle)}</div>
+                  <div class="suggestion-sub">${escapeHtml(subTitle)}</div>
+                </div>
+              `;
+            }).join('');
+
+            suggestions.innerHTML = (isPickup ? renderGPSOption() : "") + itemsHtml;
+            suggestions.style.display = "block";
+            if (isPickup) bindGPSEvent();
+
+            suggestions.querySelectorAll(".suggestion").forEach(el => {
+              el.addEventListener("click", function() {
+                const idx = Number(this.getAttribute("data-idx"));
+                const selected = data[idx];
+                if (selected) {
+                  const cleanName = formatCleanArea(selected);
+                  input.value = cleanName;
+                  input.setAttribute("data-lat", selected.lat);
+                  input.setAttribute("data-lon", selected.lon);
+                  updateClearBtn();
+                  checkAndDrawUserRouteImmediate();
+                }
+                suggestions.style.display = "none";
+              });
+            });
+
+          } catch (err) {
+            console.error("Autocomplete error:", err);
+            suggestions.innerHTML = (isPickup ? renderGPSOption() : "") + `
+              <div class="suggestion-status" style="color:#e11d48;">Could not fetch locations. Check connection.</div>
+            `;
+            if (isPickup) bindGPSEvent();
+          }
+        }, 300);
+      });
+
+      function bindGPSEvent() {
+        const gpsBtn = document.getElementById("btnUseCurrentArea");
+        if (!gpsBtn) return;
+        gpsBtn.addEventListener("click", function(e) {
+          e.stopPropagation();
+          if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser.");
+            return;
+          }
+
+          suggestions.innerHTML = `
+            <div class="suggestion-status">
+              <span>Detecting current area...</span>
+            </div>
+          `;
+
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              try {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                const revUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&addressdetails=1`;
+                const res = await fetch(revUrl, { headers: { "User-Agent": "GoTogether/1.0" } });
+                const data = await res.json();
+                const cleanArea = formatCleanArea(data) || "Current Location";
+
+                input.value = cleanArea;
+                input.setAttribute("data-lat", lat);
+                input.setAttribute("data-lon", lon);
+                updateClearBtn();
+                suggestions.style.display = "none";
+                checkAndDrawUserRouteImmediate();
+              } catch (err) {
+                suggestions.innerHTML = `
+                  <div class="suggestion-status" style="color:#e11d48;">Could not resolve current area name.</div>
+                `;
+              }
+            },
+            (err) => {
+              suggestions.innerHTML = `
+                <div class="suggestion-status" style="color:#e11d48;">Location access denied or unavailable. Please type your area name.</div>
+              `;
+            },
+            { timeout: 8000 }
+          );
+        });
+      }
+
+      document.addEventListener("click", function(e) {
+        if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+          suggestions.style.display = "none";
+        }
+      });
+    }
+
+    setupLocationAutocomplete("pickup", "pickupSuggestions", "pickupClear", true);
+    setupLocationAutocomplete("drop", "dropSuggestions", "dropClear", false);
+
+    /*
+    ==================================================
+    IMMEDIATE ROUTE DRAWING ON MAP
+    ==================================================
+    */
+
+    async function checkAndDrawUserRouteImmediate() {
+      const pInput = document.getElementById("pickup");
+      const dInput = document.getElementById("drop");
+      const pLat = pInput.getAttribute("data-lat");
+      const pLon = pInput.getAttribute("data-lon");
+      const dLat = dInput.getAttribute("data-lat");
+      const dLon = dInput.getAttribute("data-lon");
+
+      if (!pLat || !pLon || !dLat || !dLon) return;
+
+      try {
+        const routeSummaryCard = document.getElementById("userRouteSummaryCard");
+        const routeSummaryText = document.getElementById("userRouteSummaryText");
+
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pLon},${pLat};${dLon},${dLat}?overview=full&geometries=geojson`;
+        const res = await fetch(osrmUrl);
+        const data = await res.json();
+
+        if (data.routes && data.routes.length) {
+          const route = data.routes[0];
+          const distKm = (route.distance / 1000).toFixed(1);
+          const timeMin = Math.round(route.duration / 60);
+
+          clearRouteLayers();
+
+          routeALayer = L.geoJSON(route.geometry, {
+            style: { color: "#1d4ed8", weight: 5, opacity: 0.85 }
+          }).addTo(map);
+
+          userPickupMarker = L.marker([pLat, pLon], { icon: userPickupIcon }).addTo(map).bindPopup("<b>Your Pickup Point</b>");
+          userDropMarker = L.marker([dLat, dLon], { icon: userDropIcon }).addTo(map).bindPopup("<b>Your Destination Point</b>");
+
+          map.fitBounds(routeALayer.getBounds(), { padding: [40, 40] });
+
+          if (routeSummaryCard && routeSummaryText) {
+            routeSummaryText.innerHTML = `<strong>${distKm} km</strong> · est. ${timeMin} min`;
+            routeSummaryCard.style.display = "flex";
+          }
+        }
+      } catch (err) {
+        console.warn("Immediate route draw error:", err);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      initMap();
+
+      const btnMore = document.getElementById("btnToggleMoreOptions");
+      const drawer = document.getElementById("moreOptionsDrawer");
+      if (btnMore && drawer) {
+        btnMore.addEventListener("click", () => {
+          const isHidden = drawer.style.display === "none";
+          drawer.style.display = isHidden ? "flex" : "none";
+          btnMore.innerHTML = `<span>${isHidden ? "- Fewer options" : "+ More options"}</span>`;
+        });
+      }
+    });
+
+    /*
+    ==================================================
+    TRAVEL DAYS & VEHICLE CONTROLS
+    ==================================================
+    */
+
+    document.querySelectorAll(".day-pill").forEach(pill => {
+      pill.addEventListener("click", function() {
+        const day = this.getAttribute("data-day");
+        if (this.classList.contains("active")) {
+          if (selectedDays.length > 1) {
+            this.classList.remove("active");
+            selectedDays = selectedDays.filter(d => d !== day);
+          }
+        } else {
+          this.classList.add("active");
+          selectedDays.push(day);
+        }
+      });
+    });
+
+    document.querySelectorAll(".segment-btn").forEach(btn => {
+      btn.addEventListener("click", function() {
+        document.querySelectorAll(".segment-btn").forEach(b => b.classList.remove("active"));
+        this.classList.add("active");
+        selectedVehicle = this.getAttribute("data-vehicle") || "Any";
+      });
+    });
+
+    document.querySelectorAll(".radius-btn").forEach(btn => {
+      btn.addEventListener("click", function() {
+        document.querySelectorAll(".radius-btn").forEach(b => b.classList.remove("active"));
+        this.classList.add("active");
+        selectedRadiusKm = Number(this.getAttribute("data-radius")) || 5;
+        loadNearbyJourneys();
+      });
+    });
+
+    /*
+    ==================================================
+    LOCATION AUTOCOMPLETE
+    ==================================================
+    */
+
+    function setupLocationAutocomplete(inputId, suggestionsId, clearBtnId, isPickup = false) {
+      const input = document.getElementById(inputId);
+      const suggestions = document.getElementById(suggestionsId);
+      const clearBtn = document.getElementById(clearBtnId);
+      let debounceTimer = null;
+
+      function updateClearBtn() {
+        if (clearBtn) {
+          clearBtn.style.display = input.value.trim() ? "flex" : "none";
+        }
+      }
+
+      if (clearBtn) {
+        clearBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          input.value = "";
+          input.removeAttribute("data-lat");
+          input.removeAttribute("data-lon");
+          updateClearBtn();
+          suggestions.style.display = "none";
+          input.focus();
+        });
+      }
+
+      function renderGPSOption() {
+        if (!isPickup) return "";
+        return `
+          <div class="suggestion-gps" id="btnUseCurrentArea">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+            <span>Use my current area</span>
+          </div>
+        `;
+      }
+
+      input.addEventListener("focus", function() {
+        updateClearBtn();
+        if (!this.value.trim() && isPickup) {
+          suggestions.innerHTML = renderGPSOption();
+          suggestions.style.display = "block";
+          bindGPSEvent();
+        }
+      });
+
+      input.addEventListener("input", function() {
+        updateClearBtn();
+        clearTimeout(debounceTimer);
+        const query = this.value.trim();
+
+        if (!query) {
+          if (isPickup) {
+            suggestions.innerHTML = renderGPSOption();
+            suggestions.style.display = "block";
+            bindGPSEvent();
+          } else {
+            suggestions.style.display = "none";
+          }
+          return;
+        }
+
+        if (query.length < 2) return;
+
+        suggestions.innerHTML = (isPickup ? renderGPSOption() : "") + `
+          <div class="suggestion-status">
+            <span>Searching places...</span>
+          </div>
+        `;
+        suggestions.style.display = "block";
+        if (isPickup) bindGPSEvent();
+
+        debounceTimer = setTimeout(async () => {
+          try {
+            const hydViewbox = "78.2000,17.6000,78.7000,17.2000";
+            const boundedUrl = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=8&countrycodes=in&viewbox=${hydViewbox}&q=${encodeURIComponent(query)}`;
+            
+            let res = await fetch(boundedUrl, { headers: { "User-Agent": "GoTogether/1.0" } });
+            if (!res.ok) throw new Error("Search network error");
+            
+            let data = await res.json();
+
+            if (!data || !data.length) {
+              suggestions.innerHTML = (isPickup ? renderGPSOption() : "") + `
+                <div class="suggestion-status">No matching places found. Try a landmark or city.</div>
+              `;
+              if (isPickup) bindGPSEvent();
+              return;
+            }
+
+            const itemsHtml = data.map((item, idx) => {
+              const mainTitle = formatCleanArea(item);
+              const subTitle = item.display_name;
+              return `
+                <div class="suggestion" data-idx="${idx}">
+                  <div class="suggestion-main">${escapeHtml(mainTitle)}</div>
+                  <div class="suggestion-sub">${escapeHtml(subTitle)}</div>
+                </div>
+              `;
+            }).join('');
+
+            suggestions.innerHTML = (isPickup ? renderGPSOption() : "") + itemsHtml;
+            suggestions.style.display = "block";
+            if (isPickup) bindGPSEvent();
+
+            suggestions.querySelectorAll(".suggestion").forEach(el => {
+              el.addEventListener("click", function() {
+                const idx = Number(this.getAttribute("data-idx"));
+                const selected = data[idx];
+                if (selected) {
+                  const cleanName = formatCleanArea(selected);
+                  input.value = cleanName;
+                  input.setAttribute("data-lat", selected.lat);
+                  input.setAttribute("data-lon", selected.lon);
+                  updateClearBtn();
+                  checkAndDrawUserRouteImmediate();
+                }
+                suggestions.style.display = "none";
+              });
+            });
+
+          } catch (err) {
+            console.error("Autocomplete error:", err);
+            suggestions.innerHTML = (isPickup ? renderGPSOption() : "") + `
+              <div class="suggestion-status" style="color:#e11d48;">Could not fetch locations. Check connection.</div>
+            `;
+            if (isPickup) bindGPSEvent();
+          }
+        }, 300);
+      });
+
+      function bindGPSEvent() {
+        const gpsBtn = document.getElementById("btnUseCurrentArea");
+        if (!gpsBtn) return;
+        gpsBtn.addEventListener("click", function(e) {
+          e.stopPropagation();
+          if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser.");
+            return;
+          }
+
+          suggestions.innerHTML = `
+            <div class="suggestion-status">
+              <span>Detecting current area...</span>
+            </div>
+          `;
+
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              try {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                const revUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&addressdetails=1`;
+                const res = await fetch(revUrl, { headers: { "User-Agent": "GoTogether/1.0" } });
+                const data = await res.json();
+                const cleanArea = formatCleanArea(data) || "Current Location";
+
+                input.value = cleanArea;
+                input.setAttribute("data-lat", lat);
+                input.setAttribute("data-lon", lon);
+                updateClearBtn();
+                suggestions.style.display = "none";
+                checkAndDrawUserRouteImmediate();
+              } catch (err) {
+                suggestions.innerHTML = `
+                  <div class="suggestion-status" style="color:#e11d48;">Could not resolve current area name.</div>
+                `;
+              }
+            },
+            (err) => {
+              suggestions.innerHTML = `
+                <div class="suggestion-status" style="color:#e11d48;">Location access denied or unavailable. Please type your area name.</div>
+              `;
+            },
+            { timeout: 8000 }
+          );
+        });
+      }
+
+      document.addEventListener("click", function(e) {
+        if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+          suggestions.style.display = "none";
+        }
+      });
+    }
+
+    setupLocationAutocomplete("pickup", "pickupSuggestions", "pickupClear", true);
+    setupLocationAutocomplete("drop", "dropSuggestions", "dropClear", false);
+
+    /*
+    ==================================================
+    IMMEDIATE ROUTE DRAWING ON MAP
+    ==================================================
+    */
+
+    async function checkAndDrawUserRouteImmediate() {
+      const pInput = document.getElementById("pickup");
+      const dInput = document.getElementById("drop");
+      const pLat = pInput.getAttribute("data-lat");
+      const pLon = pInput.getAttribute("data-lon");
+      const dLat = dInput.getAttribute("data-lat");
+      const dLon = dInput.getAttribute("data-lon");
+
+      if (!pLat || !pLon || !dLat || !dLon) return;
+
+      try {
+        const routeSummaryCard = document.getElementById("userRouteSummaryCard");
+        const routeSummaryText = document.getElementById("userRouteSummaryText");
+
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pLon},${pLat};${dLon},${dLat}?overview=full&geometries=geojson`;
+        const res = await fetch(osrmUrl);
+        const data = await res.json();
+
+        if (data.routes && data.routes.length) {
+          const route = data.routes[0];
+          const distKm = (route.distance / 1000).toFixed(1);
+          const timeMin = Math.round(route.duration / 60);
+
+          clearRouteLayers();
+
+          routeALayer = L.geoJSON(route.geometry, {
+            style: { color: "#1d4ed8", weight: 5, opacity: 0.85 }
+          }).addTo(map);
+
+          userPickupMarker = L.marker([pLat, pLon], { icon: userPickupIcon }).addTo(map).bindPopup("<b>Your Pickup Point</b>");
+          userDropMarker = L.marker([dLat, dLon], { icon: userDropIcon }).addTo(map).bindPopup("<b>Your Destination Point</b>");
+
+          map.fitBounds(routeALayer.getBounds(), { padding: [40, 40] });
+
+          if (routeSummaryCard && routeSummaryText) {
+            routeSummaryText.innerHTML = `<strong>${distKm} km</strong> · est. ${timeMin} min`;
+            routeSummaryCard.style.display = "flex";
+          }
+        }
+      } catch (err) {
+        console.warn("Immediate route draw error:", err);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const editBtn = document.getElementById("btnEditRoute");
+      if (editBtn) {
+        editBtn.addEventListener("click", () => {
+          const pickupInput = document.getElementById("pickup");
+          if (pickupInput) {
+            pickupInput.focus();
+            pickupInput.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        });
+      }
+    });
+
+    /*
+    ==================================================
+    LOAD & RENDER NEARBY JOURNEYS
+    ==================================================
+    */
+
+    async function loadNearbyJourneys() {
+      try {
+        const res = await fetch(`/api/journeys?searchRadiusKm=${selectedRadiusKm}`);
+        const data = await res.json();
+
+        if (data.success && data.journeys) {
+          activeJourneysData = data.journeys;
+          renderNearbyJourneys(activeJourneysData);
+        }
+      } catch (err) {
+        console.error("Error loading candidate journeys:", err);
+      }
+    }
+
+    function renderNearbyJourneys(journeys) {
+      if (nearbyClusterGroup) {
+        map.removeLayer(nearbyClusterGroup);
+      }
+
+      nearbyClusterGroup = L.markerClusterGroup({
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        iconCreateFunction: function(cluster) {
+          const count = cluster.getChildCount();
+          return L.divIcon({
+            html: `<div style="background:#64748b;color:#fff;font-weight:800;border-radius:20px;padding:4px 10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.2);font-size:12px;white-space:nowrap;">${count} journeys</div>`,
+            className: 'cluster-marker-custom',
+            iconSize: [80, 32],
+            iconAnchor: [40, 16]
+          });
+        }
+      });
+
+      const seenIds = new Set();
+
+      journeys.forEach(j => {
+        if (!j.id || seenIds.has(j.id) || j.id === currentUserJourneyId) return;
+        seenIds.add(j.id);
+        if (!j.pickup_lat || !j.pickup_lon) return;
+
+        const personName = (j.profiles && j.profiles.name) || j.profile_name || "Traveler";
+        const initial = personName.charAt(0).toUpperCase() || 'P';
+        const cleanPickup = formatCleanArea(j.pickup_name) || j.pickup_name;
+        const cleanDrop = formatCleanArea(j.drop_name) || j.drop_name;
+
+        const matchObj = currentMatches.find(m => m.id === j.id || (m.journey && m.journey.id === j.id));
+        const isSelected = activeMatchIndex !== null && currentMatches[activeMatchIndex] && (currentMatches[activeMatchIndex].id === j.id);
+
+        let markerBg = "#64748b";
+        if (matchObj && matchObj.matchType === "FULL") markerBg = "#1d4ed8";
+        else if (matchObj && matchObj.matchType === "PARTIAL") markerBg = "#ea580c";
+
+        const markerIcon = L.divIcon({
+          className: 'custom-person-icon',
+          html: `
+            <div class="person-map-pin" style="
+              width: ${isSelected ? '34px' : '28px'};
+              height: ${isSelected ? '34px' : '28px'};
+              background: ${markerBg};
+              color: #ffffff;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-weight: 800;
+              font-size: ${isSelected ? '14px' : '12px'};
+              border: 2px solid #ffffff;
+              box-shadow: ${isSelected ? '0 0 0 3px rgba(29,78,216,0.35), 0 3px 8px rgba(0,0,0,0.25)' : '0 2px 4px rgba(0,0,0,0.2)'};
+              transition: all 0.15s ease;
+            ">
+              ${escapeHtml(initial)}
+            </div>
+          `,
+          iconSize: isSelected ? [34, 34] : [28, 28],
+          iconAnchor: isSelected ? [17, 17] : [14, 14]
+        });
+
+        const popupHtml = `
+          <div style="min-width: 200px; padding: 2px;">
+            <div style="font-weight: 800; font-size: 14px; color: #0f172a; margin-bottom: 2px;">${escapeHtml(personName)}</div>
+            <div style="font-size: 13px; font-weight: 700; color: #1d4ed8; margin-bottom: 6px;">${escapeHtml(cleanPickup)} → ${escapeHtml(cleanDrop)}</div>
+            <button type="button" style="width:100%; height:32px; background:#1d4ed8; color:#fff; border:none; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer;" onclick="viewRouteFromMap('${j.id}')">View Route</button>
+          </div>
+        `;
+
+        const marker = L.marker([j.pickup_lat, j.pickup_lon], { icon: markerIcon }).bindPopup(popupHtml);
+        nearbyClusterGroup.addLayer(marker);
+      });
+
+      map.addLayer(nearbyClusterGroup);
+    }
+
+    /*
+    ==================================================
+    SEARCH EXECUTION & MATCHING (DYNAMIC DATA FLOW)
+    ==================================================
+    */
+
+    async function findPeople() {
+      const nameInput = document.getElementById("name");
+      const pickupInput = document.getElementById("pickup");
+      const dropInput = document.getElementById("drop");
+      const name = nameInput.value.trim() || "Traveler";
+      const pickup = pickupInput.value.trim();
+      const drop = dropInput.value.trim();
+      const departureDate = document.getElementById("departureDate").value || todayStr;
+      const departureTime = document.getElementById("departureTime").value || "08:30";
+
+      if (!pickup || !drop) {
+        alert("Please enter both Pickup location and Destination.");
+        return;
+      }
+
+      const findBtn = document.getElementById("find");
+      const resultsCard = document.getElementById("results");
+      const resultsList = document.getElementById("resultsList");
+      const resultsRouteSummary = document.getElementById("resultsRouteSummary");
+      const telemetryChip = document.getElementById("telemetryChip");
+
+      findBtn.disabled = true;
+      findBtn.innerHTML = `<span>Finding people going your way...</span>`;
+
+      resultsCard.style.display = "block";
+      resultsRouteSummary.innerHTML = `${escapeHtml(formatCleanArea(pickup))} → ${escapeHtml(formatCleanArea(drop))}`;
+      telemetryChip.innerHTML = `Finding people going your way...`;
+
+      /* ENGAGING COMPACT ROUTE DISCOVERY LOADING STATE */
+      resultsList.innerHTML = `
+        <div class="discovery-loading-card">
+          <div class="discovery-loading-header">
+            <div class="spinner-sm"></div>
+            <span class="discovery-title">Finding people going your way...</span>
+          </div>
+          <div class="discovery-steps">
+            <div class="discovery-step step-done"><span class="step-check">✓</span> <span>Your route found</span></div>
+            <div class="discovery-step step-done"><span class="step-check">✓</span> <span>Nearby journeys checked</span></div>
+            <div class="discovery-step step-active"><span class="step-pulse">●</span> <span>Finding shared roads</span></div>
+          </div>
+        </div>
+      `;
+
+      clearRouteLayers();
+
+      const searchStartTime = performance.now();
+
+      try {
+        const storedJourney = getStoredActiveJourney();
+        const isSameInputs = storedJourney &&
+          storedJourney.name === name &&
+          storedJourney.pickup === pickup &&
+          storedJourney.drop === drop &&
+          storedJourney.departureDate === departureDate &&
+          storedJourney.departureTime === departureTime;
+
+        if (isSameInputs && storedJourney.id) {
+          currentUserJourneyId = storedJourney.id;
+        }
+
+        const rawPLat = pickupInput.getAttribute("data-lat");
+        const rawPLon = pickupInput.getAttribute("data-lon");
+        const rawDLat = dropInput.getAttribute("data-lat");
+        const rawDLon = dropInput.getAttribute("data-lon");
+
+        const saveResponse = await fetch("/api/journeys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: currentUserId || undefined,
+            name,
+            pickup,
+            drop,
+            pickupLat: rawPLat ? parseFloat(rawPLat) : undefined,
+            pickupLon: rawPLon ? parseFloat(rawPLon) : undefined,
+            dropLat: rawDLat ? parseFloat(rawDLat) : undefined,
+            dropLon: rawDLon ? parseFloat(rawDLon) : undefined,
+            departureDate,
+            departureTime,
+            requesterJourneyId: currentUserJourneyId
+          })
+        });
+
+        const saved = await saveResponse.json();
+
+        if (!saveResponse.ok) {
+          throw new Error(saved.error || "Could not save your journey.");
+        }
+
+        if (saved.profile && saved.profile.id) {
+          currentUserId = saved.profile.id;
+          localStorage.setItem("gotogether_user_id", currentUserId);
+        } else if (saved.journey && saved.journey.user_id) {
+          currentUserId = saved.journey.user_id;
+          localStorage.setItem("gotogether_user_id", currentUserId);
+        }
+
+        if (saved.journey && saved.journey.id) {
+          currentUserJourneyId = saved.journey.id;
+          setStoredActiveJourney({
+            id: saved.journey.id,
+            name,
+            pickup,
+            drop,
+            departureDate,
+            departureTime
+          });
+        }
+
+        const aPickupLat = pickupInput.getAttribute("data-lat") || (saved.journey && saved.journey.pickup.lat);
+        const aPickupLon = pickupInput.getAttribute("data-lon") || (saved.journey && saved.journey.pickup.lon);
+        const aDropLat = dropInput.getAttribute("data-lat") || (saved.journey && saved.journey.drop.lat);
+        const aDropLon = dropInput.getAttribute("data-lon") || (saved.journey && saved.journey.drop.lon);
+
+        const searchResponse = await fetch("/api/match-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            aPickup: pickup,
+            aDrop: drop,
+            aPickupLat,
+            aPickupLon,
+            aDropLat,
+            aDropLon,
+            searchRadiusKm: selectedRadiusKm,
+            departureDate: departureDate,
+            departureTime: departureTime,
+            requesterJourneyId: currentUserJourneyId,
+            requesterUserId: currentUserId || undefined,
+            requesterName: name
+          })
+        });
+
+        const searchEndTime = performance.now();
+        const searchData = await searchResponse.json();
+
+        console.log("[Match Search Response]", searchData);
+
+        if (!searchResponse.ok) {
+          throw new Error(searchData.error || "Candidate search failed.");
+        }
+
+        const measuredMs = (searchData.timing && typeof searchData.timing.totalMs === 'number')
+          ? searchData.timing.totalMs
+          : (searchEndTime - searchStartTime);
+
+        const evaluatedCount = (searchData.timing && searchData.timing.candidateCount !== undefined)
+          ? searchData.timing.candidateCount
+          : (searchData.candidateCount !== undefined ? searchData.candidateCount : (searchData.matches || []).length);
+
+        const timingInfo = {
+          candidateCount: evaluatedCount,
+          totalMs: measuredMs
+        };
+
+        const seenMap = new Map();
+        (searchData.matches || []).forEach(m => {
+          const jId = m.id || m.journey_id;
+          if (jId && jId !== currentUserJourneyId && (!currentUserId || m.user_id !== currentUserId) && !seenMap.has(jId)) {
+            seenMap.set(jId, m);
+          }
+        });
+
+        currentMatches = Array.from(seenMap.values());
+        await refreshSentRequestsMap();
+        renderMatchResults(currentMatches, timingInfo);
+        loadNearbyJourneys();
+
+        if (currentMatches.length) {
+          selectMatch(0);
+        }
+
+      } catch (error) {
+        console.error("Search error:", error);
+        resultsList.innerHTML = `<div style="padding: 16px; color: #e11d48; font-weight: 700; text-align: center;">${escapeHtml(error.message || "Search failed.")}</div>`;
+      } finally {
+        findBtn.disabled = false;
+        findBtn.innerHTML = `<span>Find people going your way →</span>`;
+      }
+    }
+
+    /*
+    ==================================================
+    MAP MARKER ICONS (STRICT COLOR SEMANTICS)
+    ==================================================
+    */
+
+    const userPickupIcon = L.divIcon({
+      className: 'custom-map-pin-user-pickup',
+      html: `<div style="width:24px; height:24px; background:#1d4ed8; border:3px solid #ffffff; border-radius:50%; box-shadow:0 2px 6px rgba(0,0,0,0.25); display:flex; align-items:center; justify-content:center;"><div style="width:6px; height:6px; background:#ffffff; border-radius:50%;"></div></div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    const userDropIcon = L.divIcon({
+      className: 'custom-map-pin-user-drop',
+      html: `<div style="width:28px; height:28px; background:#ffffff; border:2.5px solid #1d4ed8; border-radius:50%; box-shadow:0 2px 6px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; color:#1d4ed8; font-weight:800; font-size:12px;">D</div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+
+    function getCandidatePickupIcon(initial, isSelected) {
+      return L.divIcon({
+        className: 'custom-map-pin-candidate-pickup',
+        html: `<div style="width:${isSelected ? '32px' : '26px'}; height:${isSelected ? '32px' : '26px'}; background:#ea580c; color:#ffffff; border:2px solid #ffffff; border-radius:50%; box-shadow:${isSelected ? '0 0 0 3px rgba(234,88,12,0.3), 0 3px 8px rgba(0,0,0,0.2)' : '0 2px 4px rgba(0,0,0,0.2)'}; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:${isSelected ? '13px' : '11px'}; transition:all 0.15s ease;">${escapeHtml(initial)}</div>`,
+        iconSize: isSelected ? [32, 32] : [26, 26],
+        iconAnchor: isSelected ? [16, 16] : [13, 13]
+      });
+    }
+
+    const candidateDropIcon = L.divIcon({
+      className: 'custom-map-pin-candidate-drop',
+      html: `<div style="width:28px; height:28px; background:#ffffff; border:2.5px solid #ea580c; border-radius:50%; box-shadow:0 2px 6px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; color:#ea580c; font-weight:800; font-size:12px;">D</div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+
+    const meetingPointIcon = L.divIcon({
+      className: 'custom-map-pin-meeting',
+      html: `<div style="display:flex; flex-direction:column; align-items:center;"><div style="width:30px; height:30px; background:#7c3aed; border:2.5px solid #ffffff; border-radius:50%; box-shadow:0 3px 8px rgba(124,58,237,0.4); display:flex; align-items:center; justify-content:center; color:#ffffff; font-size:13px;">📍</div><div style="background:#7c3aed; color:#ffffff; font-size:10.5px; font-weight:800; padding:2px 7px; border-radius:6px; margin-top:2px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.25);">Meet here</div></div>`,
+      iconSize: [60, 48],
+      iconAnchor: [30, 24]
+    });
+
+    let activeSentRequestsMap = new Map();
+
+    async function refreshSentRequestsMap() {
+      if (!currentUserId && !currentUserJourneyId) return;
+      try {
+        const queryParams = new URLSearchParams({
+          type: "sent",
+          userId: currentUserId || '',
+          journeyId: currentUserJourneyId || ''
+        });
+        const res = await fetch(`/api/join-requests?${queryParams.toString()}`);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.requests)) {
+          activeSentRequestsMap.clear();
+          data.requests.forEach(r => {
+            if (r.target_journey_id) {
+              activeSentRequestsMap.set(r.target_journey_id, r);
+            }
+          });
+        }
+      } catch (e) {
+        console.warn("Could not refresh sent requests map:", e.message);
+      }
+    }
+
+    function openTripsModalWithChat(reqId) {
+      const modal = document.getElementById("tripsModal");
+      if (modal) modal.style.display = "flex";
+      activeTab = "sent";
+      document.querySelectorAll(".tab-item").forEach(t => {
+        if (t.getAttribute("data-tab") === "sent") t.classList.add("active");
+        else t.classList.remove("active");
+      });
+      loadJoinRequests();
+    }
+
+    /*
+    ==================================================
+    RENDER MATCH RESULTS (SINGLE STREAM: "PEOPLE GOING YOUR WAY")
+    ==================================================
+    */
+
+    function renderMatchResults(matches, timing = null) {
+      const resultsCard = document.getElementById("results");
+      const list = document.getElementById("resultsList");
+      const telemetryChip = document.getElementById("telemetryChip");
+
+      resultsCard.style.display = "block";
+
+      const candidateCount = timing && timing.candidateCount !== undefined ? timing.candidateCount : (activeJourneysData ? activeJourneysData.length : 0);
+
+      if (timing && timing.candidateCount !== undefined && timing.totalMs !== undefined) {
+        const timeSec = (timing.totalMs / 1000).toFixed(1);
+        telemetryChip.innerHTML = `${candidateCount} ${candidateCount === 1 ? 'journey' : 'journeys'} checked · ${timeSec}s`;
+      } else if (matches && matches.length) {
+        telemetryChip.innerHTML = `${matches.length} ${matches.length === 1 ? 'person' : 'people'} travelling along your route`;
+      }
+
+      /* NO-MATCH EXPERIENCE */
+      if (!matches || !matches.length) {
+        if (candidateCount > 0) {
+          list.innerHTML = `
+            <div class="no-match-card">
+              <div class="no-match-icon">🗺️</div>
+              <h3 class="no-match-title">No one is travelling this exact route yet.</h3>
+              <p class="no-match-sub">We checked journeys around your route.</p>
+              <div class="no-match-highlight">${candidateCount} ${candidateCount === 1 ? 'person is' : 'people are'} travelling near your route.</div>
+              <button type="button" class="btn-primary" style="margin-top: 8px; max-width: 260px;" onclick="document.querySelectorAll('.radius-btn')[2].click()">Explore nearby journeys →</button>
+            </div>
+          `;
+        } else {
+          list.innerHTML = `
+            <div class="no-match-card">
+              <div class="no-match-icon">🚗</div>
+              <h3 class="no-match-title">No one is travelling this exact route yet.</h3>
+              <p class="no-match-sub">No journeys around this route yet.</p>
+              <div class="no-match-highlight">Be the first person going this way.</div>
+              <button type="button" class="btn-primary" style="margin-top: 8px; max-width: 260px;" onclick="focusRideForm()">Post my journey →</button>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      // Sort all route-compatible matches by shared distance descending
+      let sortedMatches = [...matches].sort((a, b) => {
+        const distA = (a.partialDetails && typeof a.partialDetails.sharedDistanceKm === 'number')
+          ? a.partialDetails.sharedDistanceKm
+          : (a.data && typeof a.data.sharedRouteDistanceKm === 'number' ? a.data.sharedRouteDistanceKm : 0);
+        const distB = (b.partialDetails && typeof b.partialDetails.sharedDistanceKm === 'number')
+          ? b.partialDetails.sharedDistanceKm
+          : (b.data && typeof b.data.sharedRouteDistanceKm === 'number' ? b.data.sharedRouteDistanceKm : 0);
+        return distB - distA;
+      });
+
+      let html = '';
+      sortedMatches.forEach((m, idx) => {
+        const sharedDistVal = (m.partialDetails && typeof m.partialDetails.sharedDistanceKm === 'number')
+          ? m.partialDetails.sharedDistanceKm
+          : (m.data && typeof m.data.sharedRouteDistanceKm === 'number' ? m.data.sharedRouteDistanceKm : 0);
+
+        const sharedDistStr = Number(sharedDistVal).toFixed(1).replace(/\.0$/, '');
+
+        const rawMatchPct = (m.routeMatchPercent !== undefined && m.routeMatchPercent !== null)
+          ? m.routeMatchPercent
+          : ((m.data && m.data.routeMatchPercent !== undefined && m.data.routeMatchPercent !== null)
+            ? m.data.routeMatchPercent
+            : m.routeOverlapPercent);
+
+        const matchPercent = (typeof rawMatchPct === 'number' && rawMatchPct > 0) ? Math.round(rawMatchPct) : 90;
+
+        const meeting = m.meetingData && m.meetingData.found ? m.meetingData.meetingPoint : null;
+
+        const cleanPickup = formatCleanArea(m.pickup);
+        const cleanDrop = formatCleanArea(m.drop);
+        const rawName = m.name || (m.profiles && m.profiles.name) || "Traveler";
+        const name = rawName;
+        const initial = name.charAt(0).toUpperCase();
+        
+        const ridesCount = m.rides_count || (m.profiles && m.profiles.rides_count);
+        const ridesCountText = ridesCount ? `${ridesCount} rides` : `Verified commuter`;
+        const meetingDisplayText = meeting ? formatMeetingPointText(meeting.display || cleanPickup) : null;
+        
+        const walkMin = m.meetingData && m.meetingData.meetingPoint && m.meetingData.meetingPoint.distanceMeters ? Math.max(1, Math.round(m.meetingData.meetingPoint.distanceMeters / 80)) : null;
+        const walkTimeText = walkMin ? `~${walkMin} min from your route` : `Near your route`;
+
+        const depTime = formatTime12H(m.departure_time);
+        const vehicle = selectedVehicle !== "Any" ? selectedVehicle : (m.vehicle || "Car");
+        const seatsText = m.seats ? ` · ${m.seats} ${m.seats === 1 ? 'seat' : 'seats'}` : '';
+        const ratingHtml = m.rating ? `<span class="rating-badge">★ ${escapeHtml(m.rating)}</span>` : '';
+        const isCardActive = idx === activeMatchIndex;
+
+        const targetJId = m.id || m.journey_id;
+        const existingReq = activeSentRequestsMap.get(targetJId);
+        const isOwnJourney = (m.user_id && currentUserId && m.user_id === currentUserId) || (m.id && currentUserJourneyId && m.id === currentUserJourneyId);
+        const isNearbyOnly = m.matchType === "NEARBY";
+
+        const isScheduleDiff = Boolean(m.scheduleDiffers || m.scheduleStatus === "different_timing" || (m.data && (m.data.scheduleDiffers || m.data.scheduleStatus === "different_timing")));
+
+        let actionButtonHtml = '';
+        if (isNearbyOnly) {
+          actionButtonHtml = `<span style="font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-subtle); padding: 8px 14px; border-radius: 8px;">Nearby Route</span>`;
+        } else if (isOwnJourney) {
+          actionButtonHtml = `<span style="font-size: 12px; font-weight: 700; color: var(--route-shared); background: #ecfdf5; padding: 8px 14px; border-radius: 8px;">Your Journey</span>`;
+        } else if (existingReq && existingReq.status !== 'cancelled') {
+          if (existingReq.status === 'pending') {
+            actionButtonHtml = `
+              <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-end;">
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <span style="font-size: 12px; font-weight: 700; color: #d97706; background: #fef3c7; padding: 6px 10px; border-radius: 8px;">✓ Request sent</span>
+                  <button class="btn-secondary" type="button" style="height:32px; padding:0 10px; font-size:12px; color:#e11d48; font-weight:700;" onclick="event.stopPropagation(); cancelJoinRequest('${existingReq.id}', '${targetJId}')">Cancel</button>
+                </div>
+                <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Chat opens after they accept your request.</span>
+              </div>
+            `;
+          } else if (existingReq.status === 'accepted') {
+            actionButtonHtml = `
+              <div style="display:flex; gap:8px; align-items:center;">
+                <span style="font-size: 12px; font-weight: 700; color: var(--route-shared); background: #ecfdf5; padding: 6px 10px; border-radius: 8px;">✓ Ride together</span>
+                <button class="btn-primary" type="button" style="height:34px; padding:0 14px; font-size:12.5px; font-weight:700;" onclick="event.stopPropagation(); openTripsModalWithChat('${existingReq.id}')">💬 Open chat</button>
+              </div>
+            `;
+          } else if (existingReq.status === 'rejected') {
+            actionButtonHtml = `
+              <button class="btn-card-request-ride" id="btnJoin_${idx}" onclick="openConfirmModal(${idx})">
+                <span>Request to ride together →</span>
+              </button>
+            `;
+          }
+        } else {
+          actionButtonHtml = `
+            <button class="btn-card-request-ride" id="btnJoin_${idx}" onclick="openConfirmModal(${idx})">
+              <span>Request to ride together →</span>
+            </button>
+          `;
+        }
+
+        html += `
+          <div class="journey-match-card ${isCardActive ? 'selected-card' : ''}" id="matchCard_${idx}" onclick="selectMatch(${idx})">
+
+            <!-- 1. HEADER: PERSON & META -->
+            <div class="card-header-row">
+              <div class="person-profile-group">
+                <div class="avatar-circle">${escapeHtml(initial)}</div>
+                <div class="person-text-group">
+                  <div class="person-name-row">
+                    <span class="person-name">${escapeHtml(name)}</span>
+                    ${ratingHtml}
+                  </div>
+                  <span class="rides-count-subtext">${escapeHtml(ridesCountText)}</span>
+                </div>
+              </div>
+
+              <div class="header-right-group">
+                <div class="meta-time-vehicle">
+                  <span>🕒 ${escapeHtml(depTime)}</span>
+                  <span class="meta-divider">|</span>
+                  <span>🚘 ${escapeHtml(vehicle)}${escapeHtml(seatsText)}</span>
+                </div>
+                <button type="button" class="btn-share-icon" onclick="event.stopPropagation(); shareJourney('${m.id}', '${escapeHtml(name)}', '${sharedDistStr}')" title="Share journey">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- 2. ROUTE HERO CONTAINER (SHARED DISTANCE HERO) -->
+            <div class="route-hero-card">
+              <div class="hero-point hero-pickup">
+                <span class="hero-dot"></span>
+                <div class="hero-point-text">
+                  <span class="point-main-name">${escapeHtml(cleanPickup)}</span>
+                  <span class="point-sub-name">Pickup point</span>
+                </div>
+              </div>
+
+              <div class="hero-line-container">
+                <div class="hero-badge-wrap">
+                  <span class="shared-distance-badge" style="font-size: 14px; font-weight: 800; padding: 6px 16px;">${sharedDistStr} km together</span>
+                </div>
+                <div class="hero-connecting-line">
+                  <span class="line-dot-left"></span>
+                  <div class="line-track"></div>
+                  <span class="line-dot-right"></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
+                  <span class="shared-route-subtext">${matchPercent}% route fit</span>
+                  ${isScheduleDiff ? `<span class="schedule-diff-badge">Route fits · Different timing</span>` : ''}
+                </div>
+              </div>
+
+              <div class="hero-point hero-drop">
+                <span class="hero-dot"></span>
+                <div class="hero-point-text" style="text-align: right;">
+                  <span class="point-main-name">${escapeHtml(cleanDrop)}</span>
+                  <span class="point-sub-name">Drop point</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. MEETING POINT BOX -->
+            ${meetingDisplayText ? `
+              <div class="meeting-point-card">
+                <div class="meeting-left">
+                  <span class="meeting-pin-icon">📍</span>
+                  <div class="meeting-text-group">
+                    <span class="meeting-label">Meet near</span>
+                    <span class="meeting-place-name">${escapeHtml(meetingDisplayText.replace(/^Meet\s+near\s+/i, ''))}</span>
+                  </div>
+                </div>
+                <div class="meeting-right">
+                  <span>${escapeHtml(walkTimeText)}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- 4. ACTION BUTTONS -->
+            <div class="card-actions-row" onclick="event.stopPropagation();">
+              <button class="btn-card-view-route" onclick="viewRoute(${idx})">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 15 22 22 18 22 2 15 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="15" y1="6" x2="15" y2="22"/></svg>
+                <span>View route</span>
+              </button>
+              ${actionButtonHtml}
+            </div>
+
+          </div>
+        `;
+      });
+
+      list.innerHTML = html;
+    }
+
+    /*
+    ==================================================
+    MAP ROUTE DRAWING & SELECTION ("VIEW ROUTE" FOCUS)
+    ==================================================
+    */
+
+    function selectMatch(idx) {
+      if (idx < 0 || idx >= currentMatches.length) return;
+      activeMatchIndex = idx;
+
+      document.querySelectorAll(".journey-match-card").forEach((card, i) => {
+        if (i === idx) card.classList.add("selected-card");
+        else card.classList.remove("selected-card");
+      });
+
+      const m = currentMatches[idx];
+      if (m && m.data) {
+        drawMatchOnMap(m.data, m.meetingData, m);
+      }
+
+      if (activeJourneysData && activeJourneysData.length) {
+        renderNearbyJourneys(activeJourneysData);
+      }
+    }
+
+    function viewRoute(idx) {
+      selectMatch(idx);
+      const mapCard = document.getElementById("mapCard");
+      if (mapCard) {
+        mapCard.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    function viewRouteFromMap(journeyId) {
+      const idx = currentMatches.findIndex(m => m.id === journeyId || (m.journey && m.journey.id === journeyId));
+      if (idx !== -1) {
+        selectMatch(idx);
+        const cardEl = document.getElementById(`matchCard_${idx}`);
+        if (cardEl) {
+          cardEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      } else {
+        const j = activeJourneysData.find(item => item.id === journeyId);
+        if (j && j.pickup_lat && j.pickup_lon) {
+          map.setView([j.pickup_lat, j.pickup_lon], 14, { animate: true });
+        }
+      }
+    }
+
+    function clearRouteLayers() {
+      if (routeALayer) { map.removeLayer(routeALayer); routeALayer = null; }
+      if (routeBLayer) { map.removeLayer(routeBLayer); routeBLayer = null; }
+      if (sharedLayer) { map.removeLayer(sharedLayer); sharedLayer = null; }
+      if (meetingMarker) { map.removeLayer(meetingMarker); meetingMarker = null; }
+      if (userPickupMarker) { map.removeLayer(userPickupMarker); userPickupMarker = null; }
+      if (userDropMarker) { map.removeLayer(userDropMarker); userDropMarker = null; }
+      if (candidatePickupMarker) { map.removeLayer(candidatePickupMarker); candidatePickupMarker = null; }
+      if (candidateDropMarker) { map.removeLayer(candidateDropMarker); candidateDropMarker = null; }
+    }
+
+    function drawMatchOnMap(data, meetingData, candidateMatch) {
+      clearRouteLayers();
+
+      // 1. MY ENTIRE ROUTE (BLUE: #1d4ed8)
+      if (data.routeA) {
+        routeALayer = L.geoJSON(data.routeA, {
+          style: { color: "#1d4ed8", weight: 5, opacity: 0.85 }
+        }).addTo(map);
+
+        const coordsA = data.routeA.coordinates || (data.routeA.geometry && data.routeA.geometry.coordinates);
+        if (coordsA && coordsA.length > 0) {
+          const pStart = coordsA[0];
+          const pEnd = coordsA[coordsA.length - 1];
+          userPickupMarker = L.marker([pStart[1], pStart[0]], { icon: userPickupIcon }).addTo(map).bindPopup("<b>Your Pickup Point</b>");
+          userDropMarker = L.marker([pEnd[1], pEnd[0]], { icon: userDropIcon }).addTo(map).bindPopup("<b>Your Destination Point</b>");
+        }
+      }
+
+      // 2. OTHER PERSON'S ENTIRE ROUTE (ORANGE: #ea580c)
+      if (data.routeB) {
+        routeBLayer = L.geoJSON(data.routeB, {
+          style: { color: "#ea580c", weight: 4, opacity: 0.85, dashArray: "6, 6" }
+        }).addTo(map);
+
+        const coordsB = data.routeB.coordinates || (data.routeB.geometry && data.routeB.geometry.coordinates);
+        if (coordsB && coordsB.length > 0) {
+          const pStart = coordsB[0];
+          const pEnd = coordsB[coordsB.length - 1];
+          const initial = (candidateMatch && candidateMatch.name ? candidateMatch.name : "T").charAt(0).toUpperCase();
+          const candIcon = getCandidatePickupIcon(initial, true);
+
+          candidatePickupMarker = L.marker([pStart[1], pStart[0]], { icon: candIcon }).addTo(map).bindPopup(`<b>${escapeHtml(candidateMatch?.name || 'Traveler')}'s Pickup Point</b>`);
+          candidateDropMarker = L.marker([pEnd[1], pEnd[0]], { icon: candidateDropIcon }).addTo(map).bindPopup(`<b>${escapeHtml(candidateMatch?.name || 'Traveler')}'s Destination Point</b>`);
+        }
+      }
+
+      // 3. SHARED / TOGETHER ROUTE (GREEN: #059669)
+      if (data.partialDetails && data.partialDetails.sharedLineGeojson) {
+        sharedLayer = L.geoJSON(data.partialDetails.sharedLineGeojson, {
+          style: { color: "#059669", weight: 8, opacity: 0.95 }
+        }).addTo(map);
+      } else if (data.routeA && data.matchType === "FULL") {
+        sharedLayer = L.geoJSON(data.routeA, {
+          style: { color: "#059669", weight: 8, opacity: 0.85 }
+        }).addTo(map);
+      }
+
+      // 4. MEETING POINT (MAP PIN ONLY)
+      if (meetingData && meetingData.found && meetingData.meetingPoint) {
+        const mp = meetingData.meetingPoint;
+        meetingMarker = L.marker([mp.lat, mp.lon], { icon: meetingPointIcon }).addTo(map)
+          .bindPopup(`<b>Meeting Point</b><br>${escapeHtml(mp.display || "Suggested meeting place")}`);
+      }
+
+      // 5. FIT MAP BOUNDS TO COMPLETE RELEVANT ROUTE
+      const layersToFit = [routeALayer, routeBLayer, userPickupMarker, userDropMarker, candidatePickupMarker, candidateDropMarker].filter(Boolean);
+      if (layersToFit.length) {
+        const group = L.featureGroup(layersToFit);
+        map.fitBounds(group.getBounds(), { padding: [40, 40] });
+      }
+    }
+
+    /*
+    ==================================================
+    SHARE & DEEP LINKING BEHAVIOR
+    ==================================================
+    */
+
+    function shareJourney(journeyId, travelerName, sharedDistKm) {
+      if (!journeyId) return;
+
+      const baseUrl = window.location.origin + window.location.pathname;
+      const shareUrl = `${baseUrl}#journey=${journeyId}`;
+      const shareText = `Hey! I found someone travelling on my route on GoTogetherRides. Maybe you know them or someone going the same way. Check it out!`;
+
+      if (navigator.share) {
+        navigator.share({
+          title: "GoTogetherRides",
+          text: shareText,
+          url: shareUrl
+        }).catch(() => {
+          openShareModal(shareUrl, shareText);
+        });
+      } else {
+        openShareModal(shareUrl, shareText);
+      }
+    }
+
+    function openShareModal(shareUrl, shareText) {
+      const modal = document.getElementById("shareModal");
+      const input = document.getElementById("shareUrlInput");
+      input.value = shareUrl;
+      modal.style.display = "flex";
+
+      document.getElementById("btnCopyShareLink").onclick = () => {
+        navigator.clipboard.writeText(shareUrl).then(() => {
+          const btn = document.getElementById("btnCopyShareLink");
+          btn.textContent = "✓ Copied!";
+          setTimeout(() => { btn.textContent = "Copy link"; }, 2000);
+        });
+      };
+
+      document.getElementById("btnWhatsAppShare").onclick = () => {
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText + " " + shareUrl)}`;
+        window.open(waUrl, "_blank");
+      };
+    }
+
+    document.getElementById("btnCloseShare").addEventListener("click", () => {
+      document.getElementById("shareModal").style.display = "none";
+    });
+
+    async function checkDeepLink() {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      let targetId = null;
+
+      if (hash && hash.includes('journey=')) {
+        targetId = hash.split('journey=')[1].split('&')[0];
+      } else if (search && search.includes('journey=')) {
+        const params = new URLSearchParams(search);
+        targetId = params.get('journey');
+      }
+
+      if (!targetId) return;
+
+      const resultsCard = document.getElementById("results");
+      const resultsList = document.getElementById("resultsList");
+      const telemetryChip = document.getElementById("telemetryChip");
+      const resultsRouteSummary = document.getElementById("resultsRouteSummary");
+
+      resultsCard.style.display = "block";
+      telemetryChip.innerHTML = "Checking shared journey...";
+      resultsList.innerHTML = `
+        <div class="skeleton-card">
+          <div class="skeleton-box" style="width: 40%; height: 18px; margin-bottom: 12px;"></div>
+          <div class="skeleton-box" style="width: 80%; height: 36px; margin-bottom: 12px;"></div>
+          <div class="skeleton-box" style="width: 100%; height: 40px;"></div>
+        </div>
+      `;
+
+      try {
+        const res = await fetch(`/api/journeys?searchRadiusKm=20`);
+        const data = await res.json();
+
+        if (data.success && data.journeys) {
+          activeJourneysData = data.journeys;
+          renderNearbyJourneys(activeJourneysData);
+
+          const targetJourney = data.journeys.find(j => j.id === targetId);
+
+          if (targetJourney) {
+            const cleanP = formatCleanArea(targetJourney.pickup_name) || targetJourney.pickup_name;
+            const cleanD = formatCleanArea(targetJourney.drop_name) || targetJourney.drop_name;
+
+            resultsRouteSummary.innerHTML = `Shared Journey: ${escapeHtml(cleanP)} → ${escapeHtml(cleanD)}`;
+
+            const t0 = performance.now();
+            const searchRes = await fetch("/api/match-search", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                aPickup: targetJourney.pickup_name,
+                aDrop: targetJourney.drop_name,
+                aPickupLat: targetJourney.pickup_lat,
+                aPickupLon: targetJourney.pickup_lon,
+                aDropLat: targetJourney.drop_lat,
+                aDropLon: targetJourney.drop_lon,
+                searchRadiusKm: 10
+              })
+            });
+            const t1 = performance.now();
+
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const evaluated = searchData.candidateCount || (searchData.timing && searchData.timing.candidateCount) || 1;
+              const durMs = (searchData.timing && searchData.timing.totalMs) || (t1 - t0);
+
+              currentMatches = searchData.matches || [];
+              renderMatchResults(currentMatches, { candidateCount: evaluated, totalMs: durMs });
+              
+              const matchIdx = currentMatches.findIndex(m => m.id === targetId || m.journey_id === targetId);
+              if (matchIdx !== -1) {
+                selectMatch(matchIdx);
+                const cardEl = document.getElementById(`matchCard_${matchIdx}`);
+                if (cardEl) {
+                  cardEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                }
+              } else if (currentMatches.length) {
+                selectMatch(0);
+              }
+            } else {
+              telemetryChip.innerHTML = "1 shared journey loaded";
+            }
+          } else {
+            telemetryChip.innerHTML = "Journey not found";
+            resultsList.innerHTML = `
+              <div style="text-align: center; color: var(--text-muted); padding: 32px 16px; background: var(--bg-page); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+                <p style="font-weight: 800; font-size: 16px; margin-bottom: 6px; color: var(--text-heading);">This journey is no longer available.</p>
+                <p style="font-size: 13.5px; line-height: 1.4; margin-bottom: 18px;">It may have been completed, cancelled, or removed by the host.</p>
+                <button type="button" class="btn-primary" style="max-width: 260px; margin: 0 auto; height: 44px;" onclick="focusRideForm()">Find people going your way</button>
+              </div>
+            `;
+          }
+        }
+      } catch (err) {
+        console.error("Error resolving deep link journey:", err);
+        telemetryChip.innerHTML = "Error loading journey";
+        resultsList.innerHTML = `
+          <div style="text-align: center; color: var(--text-muted); padding: 32px 16px;">
+            <p style="font-weight: 800; font-size: 16px; color: var(--text-heading); margin-bottom: 6px;">This journey is no longer available.</p>
+            <button type="button" class="btn-primary" style="max-width: 260px; margin: 16px auto 0;" onclick="focusRideForm()">Find people going your way</button>
+          </div>
+        `;
+      }
+    }
+
+    function focusRideForm() {
+      const pickupInput = document.getElementById("pickup");
+      if (pickupInput) {
+        pickupInput.scrollIntoView({ behavior: "smooth", block: "center" });
+        pickupInput.focus();
+      }
+    }
+
+    /*
+    ==================================================
+    CONFIRMATION SHEET MODAL
+    ==================================================
+    */
+
+    function openConfirmModal(idx) {
+      pendingRequestCandidate = currentMatches[idx];
+      if (!pendingRequestCandidate) return;
+
+      const m = pendingRequestCandidate;
+      const modal = document.getElementById("confirmModal");
+      const summary = document.getElementById("confirmSummaryBox");
+
+      const formattedDate = formatDateDDMMYYYY(m.departure_date);
+      const formattedTime = formatTime12H(m.departure_time);
+      const cleanP = formatCleanArea(m.pickup);
+      const cleanD = formatCleanArea(m.drop);
+      const myP = formatCleanArea(document.getElementById("pickup").value);
+      const myD = formatCleanArea(document.getElementById("drop").value);
+
+      summary.innerHTML = `
+        <div style="margin-bottom: 12px; font-size: 15.5px; font-weight: 800; color: var(--text-heading);">
+          Send request to ${escapeHtml(m.name || "Traveler")}?
+        </div>
+        
+        <div class="confirm-row">
+          <span class="confirm-label">Driver's Route:</span>
+          <span class="confirm-val">${escapeHtml(cleanP)} → ${escapeHtml(cleanD)}</span>
+        </div>
+        <div class="confirm-row">
+          <span class="confirm-label">Schedule:</span>
+          <span class="confirm-val">${escapeHtml(formattedDate)} · ${escapeHtml(formattedTime)}</span>
+        </div>
+        <div class="confirm-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color);">
+          <span class="confirm-label">Your Scheduled Route:</span>
+          <span class="confirm-val">${escapeHtml(myP)} → ${escapeHtml(myD)}</span>
+        </div>
+
+        <p style="margin-top: 12px; font-size: 12.5px; color: var(--text-muted); line-height: 1.4;">
+          ${escapeHtml(m.name || "They")} will receive your request. If they accept, the ride will appear in <strong>My Rides</strong>.
+        </p>
+      `;
+
+      modal.style.display = "flex";
+    }
+
+    document.getElementById("btnCloseConfirm").addEventListener("click", () => {
+      document.getElementById("confirmModal").style.display = "none";
+    });
+
+    document.getElementById("btnCancelJoinRequest").addEventListener("click", () => {
+      document.getElementById("confirmModal").style.display = "none";
+    });
+
+    document.getElementById("btnSendJoinRequest").addEventListener("click", async () => {
+      if (!pendingRequestCandidate) return;
+
+      const m = pendingRequestCandidate;
+      const sendBtn = document.getElementById("btnSendJoinRequest");
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sending...";
+
+      try {
+        const payload = {
+          targetJourneyId: m.id,
+          requesterJourneyId: currentUserJourneyId,
+          requesterId: currentUserId || undefined,
+          requesterName: document.getElementById("name").value.trim() || "Traveler",
+          pickupName: document.getElementById("pickup").value.trim(),
+          dropName: document.getElementById("drop").value.trim(),
+          meetingPointLat: m.meetingData && m.meetingData.found ? m.meetingData.meetingPoint.lat : null,
+          meetingPointLon: m.meetingData && m.meetingData.found ? m.meetingData.meetingPoint.lon : null
+        };
+
+        const res = await fetch("/api/join-requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const resData = await res.json();
+        if (!res.ok) throw new Error(resData.error || "Could not submit request.");
+
+        document.getElementById("confirmModal").style.display = "none";
+
+        if (resData.request) {
+          activeSentRequestsMap.set(m.id || m.journey_id, resData.request);
+        } else {
+          activeSentRequestsMap.set(m.id || m.journey_id, { status: "pending" });
+        }
+
+        renderMatchResults(currentMatches);
+
+      } catch (err) {
+        alert(err.message || "Failed to send request.");
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Send Request";
+      }
+    });
+
+    /*
+    ==================================================
+    MY TRIPS & REQUESTS MODAL
+    ==================================================
+    */
+
+    let activeTab = "received";
+
+    document.getElementById("btnTripsModal").addEventListener("click", () => {
+      document.getElementById("tripsModal").style.display = "flex";
+      loadJoinRequests();
+    });
+
+    document.getElementById("btnCloseTrips").addEventListener("click", () => {
+      document.getElementById("tripsModal").style.display = "none";
+    });
+
+    document.querySelectorAll(".tab-item").forEach(tab => {
+      tab.addEventListener("click", function() {
+        document.querySelectorAll(".tab-item").forEach(t => t.classList.remove("active"));
+        this.classList.add("active");
+        activeTab = this.getAttribute("data-tab");
+        loadJoinRequests();
+      });
+    });
+
+    function setDepartureTime(val) {
+      const input = document.getElementById("departureTime");
+      if (input) {
+        input.value = val;
+      }
+    }
+
+    async function loadJoinRequests() {
+      const content = document.getElementById("tripsModalContent");
+      content.innerHTML = `<p style="color: var(--text-muted); font-size: 14px; text-align: center; padding: 20px 0;">Loading requests...</p>`;
+
+      try {
+        const queryParams = new URLSearchParams({
+          type: activeTab,
+          userId: currentUserId || '',
+          journeyId: currentUserJourneyId || ''
+        });
+
+        const res = await fetch(`/api/join-requests?${queryParams.toString()}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.requests || !data.requests.length) {
+          content.innerHTML = `<p style="color: var(--text-muted); font-size: 14px; text-align: center; padding: 30px 0;">No ${activeTab === 'received' ? 'received' : 'sent'} requests found.</p>`;
+          return;
+        }
+
+        let filtered = data.requests;
+
+        let html = '';
+        filtered.forEach(req => {
+          const badgeHtml = req.status === 'accepted'
+            ? `<span style="color:var(--route-shared); background:#ecfdf5; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:700;">✓ Accepted</span>`
+            : req.status === 'rejected'
+            ? `<span style="color:#e11d48; background:#ffe4e6; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:700;">✕ Declined</span>`
+            : `<span style="color:#d97706; background:#fef3c7; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:700;">⌛ Waiting for response</span>`;
+
+          const headerTitle = activeTab === 'received'
+            ? `🚗 ${escapeHtml(req.requester_name || "Commuter")}`
+            : `🚗 Request to ${escapeHtml(req.target_host_name || "Host Driver")}`;
+
+          html += `
+            <div class="request-card">
+              <div class="request-card-header">
+                <span style="font-weight: 800; color: var(--text-heading); font-size: 14.5px;">${headerTitle}</span>
+                ${badgeHtml}
+              </div>
+              <div style="font-size: 13.5px; color: var(--text-body); margin-bottom: 8px; font-weight: 600;">
+                Route: ${escapeHtml(formatCleanArea(req.pickup_name))} → ${escapeHtml(formatCleanArea(req.drop_name))}
+              </div>
+              ${req.status === 'pending' && activeTab === 'received' ? `
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                  <button class="btn-action-accept" onclick="updateReqStatus('${req.id}', 'accepted')">Accept</button>
+                  <button class="btn-action-reject" onclick="updateReqStatus('${req.id}', 'rejected')">Decline</button>
+                </div>
+              ` : ''}
+              ${req.status === 'accepted' ? `
+                <div id="chatContainer_${req.id}"></div>
+              ` : ''}
+            </div>
+          `;
+        });
+
+        content.innerHTML = html;
+
+        filtered.forEach(req => {
+          if (req.status === 'accepted') {
+            setTimeout(() => loadChatForRequest(req.id, `chatContainer_${req.id}`), 50);
+          }
+        });
+
+      } catch (err) {
+        content.innerHTML = `<p style="color: #e11d48; font-size: 14px; text-align: center;">Could not load requests.</p>`;
+      }
+    }
+
+    async function loadChatForRequest(requestId, containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      try {
+        const queryParams = new URLSearchParams();
+        if (currentUserId) queryParams.append("userId", currentUserId);
+
+        const res = await fetch(`/api/conversations/${requestId}?${queryParams.toString()}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.conversation) {
+          container.innerHTML = `<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:8px;">Chat unavailable.</div>`;
+          return;
+        }
+
+        const conv = data.conversation;
+        const msgs = data.messages || [];
+        const myUserId = currentUserId || getStoredUserId();
+
+        const sortedMsgs = [...msgs].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        const seenMsgIds = new Set();
+
+        let msgHtml = '';
+        if (!sortedMsgs.length) {
+          msgHtml = `<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">No messages yet. Send a quick message below!</div>`;
+        } else {
+          sortedMsgs.forEach(m => {
+            if (m.id && seenMsgIds.has(m.id)) return;
+            if (m.id) seenMsgIds.add(m.id);
+
+            const senderId = m.sender_id || m.sender_user_id;
+            const isMe = Boolean(myUserId && senderId && senderId === myUserId);
+            const displayName = isMe ? "You" : (m.sender_name || "Commuter");
+            const timeStr = formatTime12H(m.created_at ? new Date(m.created_at).toTimeString().substring(0, 5) : '');
+            const readStatus = m.read_at ? '✓✓ Read' : '✓ Sent';
+
+            msgHtml += `
+              <div class="chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-other'}">
+                <span class="chat-msg-sender">${escapeHtml(displayName)}</span>
+                <span>${escapeHtml(m.quick_message_text || m.text || '')}</span>
+                <span class="chat-msg-meta">${escapeHtml(timeStr)} · ${escapeHtml(readStatus)}</span>
+              </div>
+            `;
+          });
+        }
+
+        container.innerHTML = `
+          <div class="chat-box-card">
+            <div class="chat-header-row">
+              <span class="chat-title-text">💬 Ride Chat</span>
+              <span style="font-size:11px; color:var(--route-shared); font-weight:700;">✓ Active</span>
+            </div>
+            <div class="chat-messages-container" id="chatMsgList_${conv.id}">
+              ${msgHtml}
+            </div>
+            <div class="quick-messages-section">
+              <span class="quick-msg-label">Send Quick Message (No free text):</span>
+              <div class="quick-msg-chips-grid">
+                <button type="button" class="quick-msg-pill" onclick="sendQuickMessage('${conv.id}', '${requestId}', 'where_meet')">Where should we meet?</button>
+                <button type="button" class="quick-msg-pill" onclick="sendQuickMessage('${conv.id}', '${requestId}', 'near_metro')">Can we meet near the metro?</button>
+                <button type="button" class="quick-msg-pill" onclick="sendQuickMessage('${conv.id}', '${requestId}', 'around_time')">I'll be there around departure time.</button>
+                <button type="button" class="quick-msg-pill" onclick="sendQuickMessage('${conv.id}', '${requestId}', 'ready_leave')">I'm ready to leave.</button>
+                <button type="button" class="quick-msg-pill" onclick="sendQuickMessage('${conv.id}', '${requestId}', 'thanks_see_you')">Thanks, see you there.</button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        const listEl = document.getElementById(`chatMsgList_${conv.id}`);
+        if (listEl) listEl.scrollTop = listEl.scrollHeight;
+
+        fetch(`/api/conversations/${conv.id}/read`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ readerUserId: myUserId })
+        }).catch(() => {});
+
+      } catch (e) {
+        container.innerHTML = `<div style="font-size:12px; color:#e11d48; text-align:center;">Could not load chat.</div>`;
+      }
+    }
+
+    async function sendQuickMessage(convId, requestId, quickMessageKey) {
+      const currentName = document.getElementById("name").value.trim() || "Commuter";
+      const myUserId = currentUserId || getStoredUserId();
+      try {
+        const res = await fetch(`/api/conversations/${convId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderId: myUserId || currentUserJourneyId || "user-local",
+            senderName: currentName,
+            quickMessageKey
+          })
+        });
+
+        if (res.ok) {
+          loadChatForRequest(requestId, `chatContainer_${requestId}`);
+        } else {
+          const err = await res.json();
+          alert(err.error || "Could not send message.");
+        }
+      } catch (e) {
+        console.error("Send message error:", e);
+      }
+    }
+
+    async function updateReqStatus(id, newStatus) {
+      try {
+        const res = await fetch(`/api/join-requests/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: newStatus,
+            userId: currentUserId,
+            userJourneyId: currentUserJourneyId
+          })
+        });
+        if (res.ok) {
+          loadJoinRequests();
+        } else {
+          const errData = await res.json();
+          alert(errData.error || "Could not update request status.");
+        }
+      } catch (e) {
+        console.error("Status update error:", e);
+      }
+    }
+
+    /*
+    ==================================================
+    CLEAR & RESET STATE
+    ==================================================
+    */
+
+    document.getElementById("clear").addEventListener("click", () => {
+      document.getElementById("name").value = "";
+
+      const pInput = document.getElementById("pickup");
+      pInput.value = "";
+      pInput.removeAttribute("data-lat");
+      pInput.removeAttribute("data-lon");
+      document.getElementById("pickupClear").style.display = "none";
+
+      const dInput = document.getElementById("drop");
+      dInput.value = "";
+      dInput.removeAttribute("data-lat");
+      dInput.removeAttribute("data-lon");
+      document.getElementById("dropClear").style.display = "none";
+
+      const summaryText = document.getElementById("userRouteSummaryText");
+      if (summaryText) {
+        summaryText.innerHTML = "Select pickup and drop to see your route.";
+      }
+
+      document.getElementById("departureDate").value = todayStr;
+      document.getElementById("departureTime").value = "08:30";
+      document.getElementById("results").style.display = "none";
+
+      currentMatches = [];
+      currentUserJourneyId = null;
+      setStoredActiveJourney(null);
+      clearRouteLayers();
+      map.setView([17.385, 78.4867], 11);
+      loadNearbyJourneys();
+    });
+
+    async function cancelJoinRequest(reqId, targetJId) {
+      if (!reqId) return;
+      try {
+        const res = await fetch(`/api/join-requests/${reqId}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" }
+        });
+        if (res.ok) {
+          if (targetJId) activeSentRequestsMap.delete(targetJId);
+          renderMatchResults(currentMatches);
+        } else {
+          alert("Could not cancel request.");
+        }
+      } catch (e) {
+        console.error("Cancel request error:", e);
+      }
+    }
+
+    /*
+    ==================================================
+    NOTIFICATIONS SYSTEM (PERSISTED & REAL-TIME BADGE)
+    ==================================================
+    */
+    async function loadUserNotifications() {
+      const myUserId = currentUserId || getStoredUserId();
+      const badge = document.getElementById("notificationBadge");
+      if (!myUserId) {
+        if (badge) badge.style.display = "none";
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/notifications?userId=${encodeURIComponent(myUserId)}`);
+        const data = await res.json();
+        if (res.ok && data.notifications) {
+          if (badge) {
+            if (data.unreadCount > 0) {
+              badge.textContent = data.unreadCount;
+              badge.style.display = "inline-block";
+            } else {
+              badge.style.display = "none";
+            }
+          }
+
+          const content = document.getElementById("notificationsModalContent");
+          if (content && document.getElementById("notificationsModal").style.display === "flex") {
+            if (!data.notifications.length) {
+              content.innerHTML = `<p style="color: var(--text-muted); font-size: 13.5px; text-align: center; padding: 24px 16px;">No notifications yet.</p>`;
+            } else {
+              let html = '';
+              data.notifications.forEach(n => {
+                const timeAgo = formatTime12H(n.created_at ? new Date(n.created_at).toTimeString().substring(0, 5) : '');
+                const unreadDot = !n.read_at ? `<span style="display:inline-block; width:8px; height:8px; background:var(--route-my); border-radius:50%; margin-right:6px;"></span>` : '';
+                html += `
+                  <div class="request-card" style="${!n.read_at ? 'background:#eff6ff; border-color:#bfdbfe;' : ''}">
+                    <div class="request-card-header">
+                      <span style="font-weight:800; font-size:14px; color:var(--text-heading);">${unreadDot}${escapeHtml(n.title)}</span>
+                      <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(timeAgo)}</span>
+                    </div>
+                    <div style="font-size:13px; color:var(--text-body); line-height:1.4;">${escapeHtml(n.message)}</div>
+                  </div>
+                `;
+              });
+              content.innerHTML = html;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Error loading notifications:", e);
+      }
+    }
+
+    document.getElementById("btnNotificationsModal").addEventListener("click", () => {
+      document.getElementById("notificationsModal").style.display = "flex";
+      loadUserNotifications();
+      const myUserId = currentUserId || getStoredUserId();
+      if (myUserId) {
+        fetch("/api/notifications/read", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: myUserId })
+        }).then(() => {
+          const badge = document.getElementById("notificationBadge");
+          if (badge) badge.style.display = "none";
+        }).catch(() => {});
+      }
+    });
+
+    document.getElementById("btnCloseNotifications").addEventListener("click", () => {
+      document.getElementById("notificationsModal").style.display = "none";
+    });
+
+    setInterval(loadUserNotifications, 15000);
+
+    /*
+    ==================================================
+    AUTHENTICATION & USER SESSION (SUPABASE AUTH INTEGRATION)
+    ==================================================
+    */
+    let authenticatedUser = null;
+
+    async function initSupabaseAuth() {
+      try {
+        const res = await fetch("/api/config");
+        const cfg = await res.json();
+        if (window.supabase && cfg.supabaseUrl && cfg.supabaseAnonKey && !cfg.supabaseUrl.includes("placeholder")) {
+          window.supabaseClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+          
+          const { data: { session } } = await window.supabaseClient.auth.getSession();
+          if (session && session.user) {
+            handleSupabaseUserSession(session.user);
+          }
+
+          window.supabaseClient.auth.onAuthStateChange((_event, session) => {
+            if (session && session.user) {
+              handleSupabaseUserSession(session.user);
+            }
+          });
+        }
+      } catch (e) {
+        console.warn("Supabase auth init warning:", e);
+      }
+    }
+
+    async function handleSupabaseUserSession(user) {
+      const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || "Commuter";
+      const email = user.email;
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, userId: user.id })
+        });
+        const data = await res.json();
+        if (res.ok && data.profile) {
+          setStoredUserSession(data.profile);
+        } else {
+          setStoredUserSession({ id: user.id, name, email });
+        }
+      } catch (e) {
+        setStoredUserSession({ id: user.id, name, email });
+      }
+      loadUserNotifications();
+    }
+
+    function getStoredUserSession() {
+      try {
+        const s = sessionStorage.getItem("gotogether_user_session");
+        return s ? JSON.parse(s) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function setStoredUserSession(userObj) {
+      try {
+        if (userObj) {
+          sessionStorage.setItem("gotogether_user_session", JSON.stringify(userObj));
+          authenticatedUser = userObj;
+          currentUserId = userObj.id;
+          setStoredUserId(currentUserId);
+          const nameInput = document.getElementById("name");
+          if (nameInput && userObj.name) nameInput.value = userObj.name;
+        } else {
+          sessionStorage.removeItem("gotogether_user_session");
+          authenticatedUser = null;
+          currentUserId = null;
+          setStoredUserId(null);
+        }
+        updateAuthUI();
+      } catch (e) {}
+    }
+
+    function updateAuthUI() {
+      const label = document.getElementById("authBtnLabel");
+      const btn = document.getElementById("btnAuthModal");
+      if (!label || !btn) return;
+
+      if (authenticatedUser && authenticatedUser.name) {
+        label.textContent = `👤 ${authenticatedUser.name.split(' ')[0]}`;
+        btn.title = "Click to sign out";
+      } else {
+        label.textContent = "Sign In";
+        btn.title = "Sign in to GoTogether";
+      }
+    }
+
+    document.getElementById("btnAuthModal").addEventListener("click", () => {
+      if (authenticatedUser) {
+        if (confirm(`Signed in as ${authenticatedUser.name}. Do you want to sign out?`)) {
+          if (window.supabaseClient) window.supabaseClient.auth.signOut();
+          setStoredUserSession(null);
+        }
+      } else {
+        document.getElementById("authModal").style.display = "flex";
+      }
+    });
+
+    document.getElementById("btnCloseAuth").addEventListener("click", () => {
+      document.getElementById("authModal").style.display = "none";
+    });
+
+    document.getElementById("btnGoogleAuth").addEventListener("click", async () => {
+      const msgEl = document.getElementById("authStatusMsg");
+      if (msgEl) msgEl.textContent = "Redirecting to Google Sign-In...";
+      if (window.supabaseClient) {
+        const { error } = await window.supabaseClient.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo: window.location.origin }
+        });
+        if (error) {
+          if (msgEl) msgEl.textContent = error.message || "Google OAuth is not enabled in Supabase project settings. Please sign in with Email below.";
+          alert("Google Sign-In notice: " + (error.message || "Google OAuth is not enabled. Please sign in with Email below."));
+        }
+      } else {
+        alert("Supabase Auth initialization in progress. Please try again in a moment.");
+      }
+    });
+
+    document.getElementById("btnSubmitAuthSignIn").addEventListener("click", async () => {
+      const emailInput = document.getElementById("authEmail");
+      const passwordInput = document.getElementById("authPassword");
+      const msgEl = document.getElementById("authStatusMsg");
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+
+      if (!email || !password) {
+        alert("Please enter both Email Address and Password.");
+        return;
+      }
+
+      if (msgEl) msgEl.textContent = "Signing in...";
+
+      if (window.supabaseClient) {
+        const { data, error } = await window.supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) {
+          if (msgEl) msgEl.textContent = error.message || "Sign in failed.";
+          alert(error.message || "Sign in failed.");
+        } else if (data && data.user) {
+          handleSupabaseUserSession(data.user);
+          document.getElementById("authModal").style.display = "none";
+        }
+      } else {
+        alert("Supabase client initializing...");
+      }
+    });
+
+    document.getElementById("btnSubmitAuthSignUp").addEventListener("click", async () => {
+      const emailInput = document.getElementById("authEmail");
+      const passwordInput = document.getElementById("authPassword");
+      const msgEl = document.getElementById("authStatusMsg");
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+
+      if (!email || !password) {
+        alert("Please enter both Email Address and Password to sign up.");
+        return;
+      }
+
+      if (password.length < 6) {
+        alert("Password must be at least 6 characters.");
+        return;
+      }
+
+      if (msgEl) msgEl.textContent = "Creating account...";
+
+      if (window.supabaseClient) {
+        const { data, error } = await window.supabaseClient.auth.signUp({ email, password });
+        if (error) {
+          if (msgEl) msgEl.textContent = error.message || "Sign up failed.";
+          alert(error.message || "Sign up failed.");
+        } else if (data && data.user) {
+          if (msgEl) msgEl.textContent = "Account created! Check your email or sign in.";
+          alert("Account created successfully! You can now sign in.");
+          handleSupabaseUserSession(data.user);
+          document.getElementById("authModal").style.display = "none";
+        }
+      } else {
+        alert("Supabase client initializing...");
+      }
+    });
+
+    const initSession = getStoredUserSession();
+    if (initSession) setStoredUserSession(initSession);
+    initSupabaseAuth();
+
+    /*
+    ==================================================
+    CONVERSATIONS MENU
+    ==================================================
+    */
+    document.getElementById("btnConversationsModal").addEventListener("click", () => {
+      document.getElementById("conversationsModal").style.display = "flex";
+      loadUserConversations();
+    });
+
+    document.getElementById("btnCloseConversations").addEventListener("click", () => {
+      document.getElementById("conversationsModal").style.display = "none";
+    });
+
+    async function loadUserConversations() {
+      const container = document.getElementById("conversationsModalContent");
+      container.innerHTML = `<p style="color: var(--text-muted); font-size: 14px; text-align: center; padding: 20px 0;">Loading conversations...</p>`;
+
+      const myUserId = currentUserId || getStoredUserId();
+      if (!myUserId) {
+        container.innerHTML = `<p style="color: var(--text-muted); font-size: 13.5px; text-align: center; padding: 24px 16px;">Please sign in or create a journey first to view your ride conversations.</p>`;
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/conversations?userId=${encodeURIComponent(myUserId)}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.conversations || !data.conversations.length) {
+          container.innerHTML = `<p style="color: var(--text-muted); font-size: 13.5px; text-align: center; padding: 24px 16px;">No active ride conversations yet. Conversations are created automatically when a ride request is accepted.</p>`;
+          return;
+        }
+
+        let html = '';
+        data.conversations.forEach(conv => {
+          const partnerName = (conv.target_host_user_id === myUserId) ? (conv.requester_name || "Commuter") : (conv.target_host_name || "Host Driver");
+          html += `
+            <div class="request-card" style="cursor:pointer;" onclick="document.getElementById('conversationsModal').style.display='none'; openTripsModalWithChat('${conv.id}')">
+              <div class="request-card-header">
+                <span style="font-weight: 800; color: var(--text-heading); font-size: 14.5px;">💬 ${escapeHtml(partnerName)}</span>
+                <span style="color:var(--route-shared); background:#ecfdf5; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:700;">Active Chat</span>
+              </div>
+              <div style="font-size: 13px; color: var(--text-body); margin-bottom: 4px;">
+                Route: ${escapeHtml(formatCleanArea(conv.pickup_name))} → ${escapeHtml(formatCleanArea(conv.drop_name))}
+              </div>
+              <button type="button" style="margin-top:6px; background:var(--route-my); color:#fff; border:none; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">Open Chat →</button>
+            </div>
+          `;
+        });
+
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = `<p style="color: #e11d48; font-size: 13.5px; text-align: center; padding: 20px 0;">Could not load conversations.</p>`;
+      }
+    }
+
+    document.getElementById("find").addEventListener("click", findPeople);
+
+  </script>
+</body>
+</html>
