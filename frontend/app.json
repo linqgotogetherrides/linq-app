@@ -37,7 +37,8 @@
         "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -101,8 +102,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "66bde5d6-d238-465b-9137-1ff365b3a339"
+        "projectId": "0f36b43c-2ed9-4767-928e-0a8e3835281e"
       }
-    }
+    },
+    "owner": "ksumanthhhhhhh"
   }
 }

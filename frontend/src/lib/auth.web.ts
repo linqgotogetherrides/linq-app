@@ -1,4 +1,4 @@
-export const signInWithPhoneNumber = async (phone: string) => {
+﻿export const signInWithPhoneNumber = async (phone: string) => {
   console.log(`[Web Mock] Sending OTP to ${phone}`);
 
   return {
@@ -14,7 +14,7 @@ export const signOut = async () => {};
 /**
  * Web has no Firebase session (auth.web.ts is a demo stub), so there is never a
  * Firebase ID token here. Returning null keeps the Supabase client on the anon
- * key for web, which is the existing behaviour, and — importantly — means the
+ * key for web, which is the existing behaviour, and â€” importantly â€” means the
  * web bundle never imports @react-native-firebase/auth.
  */
 export const getIdToken = async (_forceRefresh = false): Promise<string | null> => null;
@@ -29,3 +29,7 @@ export const getIdToken = async (_forceRefresh = false): Promise<string | null> 
  * the anon key and look like they worked.
  */
 export const supportsFirebaseIdentity = (): boolean => false;
+
+
+/** Web demo auth has no persisted Firebase identity. */
+export const getCurrentFirebaseUserId = async (): Promise<string | null> => null;

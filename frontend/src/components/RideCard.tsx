@@ -64,7 +64,7 @@ export default function RideCard({ ride, onRequest }: Props) {
 
   const handleAuthRequiredAction = (action: () => void) => {
     if (!user) {
-      router.push('/onboarding');
+      router.push('/login');
     } else {
       action();
     }

@@ -12,8 +12,9 @@ import type {
   VerificationDocument,
 } from '@/src/types';
 import { supabase } from '@/src/lib/supabase';
+import { getCurrentFirebaseUserId } from '@/src/lib/auth';
 import { ensureUserProfile } from '@/src/services/userProfile';
-import { clearSession, readSession } from '@/src/services/session';
+import { clearSession, saveSession, readGuestMode, saveGuestMode, clearGuestMode } from '@/src/services/session';
 import { rideRequestService } from '@/src/services/rideRequestService';
 import { savedPlaceKey } from '@/src/lib/location/savedPlaces';
 
@@ -180,6 +181,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!user) return;
     setGuestMode(false);
+    void clearGuestMode();
     setLoginPromptVisible(false);
   }, [user]);
 
@@ -190,11 +192,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const enterGuestMode = useCallback(() => {
     setGuestMode(true);
+    void saveGuestMode();
     setLoginPromptVisible(false);
   }, []);
 
   const exitGuestMode = useCallback(() => {
     setGuestMode(false);
+    void clearGuestMode();
     setLoginPromptVisible(false);
   }, []);
 
@@ -428,6 +432,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // A real account always ends guest browsing. This also clears a stale guest
     // flag when a session is restored on a later launch.
     setGuestMode(false);
+    void clearGuestMode();
     setLoginPromptVisible(false);
     return mappedUser;
   }, []);
@@ -469,24 +474,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [mapAndSet]);
 
   /**
-   * Restore the signed-in rider on cold start. A stale id simply fails to load a
-   * profile and is treated as signed out, so a deleted or half-created account
-   * cannot lock anyone in.
+   * Restore a real authentication session on cold start.
+   * Supabase is authoritative for Google/Apple; Firebase is authoritative
+   * for native phone OTP. A cached UID alone is never authentication proof.
    */
   React.useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const storedUid = await readSession();
-        if (!storedUid) return;
+        // First restore Google/Apple from Supabase's persisted session.
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
 
-        await fetchUserProfile(storedUid);
+        if (sessionError) {
+          console.warn('Supabase session restore failed:', sessionError.message);
+        }
+
+        const supabaseUid = sessionData.session?.user?.id;
+
+        if (supabaseUid) {
+          const restoredProfile = await fetchUserProfile(supabaseUid);
+
+          if (cancelled) return;
+
+          if (restoredProfile) {
+            await saveSession(supabaseUid);
+            return;
+          }
+
+          console.warn('Supabase session exists, but its profile could not be restored.');
+          await clearSession();
+          return;
+        }
+
+        // No Supabase session: check the real native Firebase phone session.
+        const firebaseUid = await getCurrentFirebaseUserId();
+
         if (cancelled) return;
 
-        if (!userRef.current) {
-          await clearSession();
+        if (firebaseUid) {
+          const restoredProfile = await fetchUserProfile(firebaseUid);
+
+          if (cancelled) return;
+
+          if (restoredProfile) {
+            await saveSession(firebaseUid);
+          } else {
+            await clearSession();
+          }
+
+          return;
         }
+
+        // Neither provider has an authenticated user. Restore guest browsing
+        // separately; a guest flag is never treated as an authenticated session.
+        await clearSession();
+        const wasGuest = await readGuestMode();
+        if (cancelled) return;
+        setGuestMode(wasGuest);
       } catch (error) {
         console.warn('Session restore failed:', error);
       } finally {
@@ -583,3 +629,5 @@ export function useApp() {
   if (!ctx) throw new Error('useApp must be inside AppProvider');
   return ctx;
 }
+
+

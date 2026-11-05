@@ -89,8 +89,21 @@ credentials.json
 .emergent/
 .gitconfig
 
-# Firebase / Google service-account credentials — MUST never be committed
+# Firebase / Google service-account credentials ΓÇö MUST never be committed
 *-service-account*.json
 serviceAccount*.json
 *firebase-adminsdk*.json
 **/application_default_credentials.json
+# Expo local files
+.expo/
+
+# Preserve app example exclusion
+app-example
+
+# Android and mobile signing credentials - NEVER COMMIT
+*.jks
+*.keystore
+*.p8
+*.p12
+*.pfx
+*.mobileprovision

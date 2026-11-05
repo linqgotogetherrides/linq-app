@@ -204,15 +204,21 @@ function getCoordsForRidePlace(place: {
 }): Coordinates | null {
   const latitude = place.lat ?? place.latitude;
   const longitude = place.lng ?? place.longitude;
+
   if (
-    typeof latitude === 'number' &&
-    typeof longitude === 'number' &&
-    Number.isFinite(latitude) &&
-    Number.isFinite(longitude)
+    typeof latitude !== 'number' ||
+    typeof longitude !== 'number' ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
   ) {
-    return { latitude, longitude };
+    return null;
   }
-  return null;
+
+  return { latitude, longitude };
 }
 
 /**
@@ -282,32 +288,38 @@ export const rideService = {
 
     if (query.pickupCoordinates && !query.destinationCoordinates) {
       const origin = query.pickupCoordinates;
-      rides = rides
-        .map((ride) => {
-          const pickup = getCoordsForRidePlace(ride.pickup);
-          if (!pickup) return ride;
-          return {
-            ...ride,
-            distanceKm: haversineDistanceKm(origin, pickup),
-          };
-        })
-        .sort((a, b) => (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY));
       const radiusKm = (query.radiusMeters ?? 25_000) / 1000;
-      return rides.filter((ride) => ride.distanceKm == null || ride.distanceKm <= radiusKm);
+
+      rides = rides
+        .flatMap((ride) => {
+          const pickup = getCoordsForRidePlace(ride.pickup);
+          if (!pickup) return [];
+
+          const distanceKm = haversineDistanceKm(origin, pickup);
+          if (distanceKm > radiusKm) return [];
+
+          return [{ ...ride, distanceKm }];
+        })
+        .sort((a, b) => a.distanceKm - b.distanceKm);
+
+      return rides;
     }
 
     if (query.destinationCoordinates && !query.pickupCoordinates) {
       const destination = query.destinationCoordinates;
+
       rides = rides
-        .map((ride) => {
+        .flatMap((ride) => {
           const drop = getCoordsForRidePlace(ride.destination);
-          if (!drop) return ride;
-          return {
+          if (!drop) return [];
+
+          return [{
             ...ride,
             distanceKm: haversineDistanceKm(destination, drop),
-          };
+          }];
         })
-        .sort((a, b) => (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY));
+        .sort((a, b) => a.distanceKm - b.distanceKm);
+
       return rides;
     }
 
@@ -358,9 +370,7 @@ export const rideService = {
       const scoredRides = (await Promise.all(scoredPromises)).filter(
         (ride): ride is Ride => ride !== null
       );
-      if (scoredRides.length > 0) {
-        rides = scoredRides.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
-      }
+      rides = scoredRides.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
     }
 
     return rides;

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -56,7 +56,7 @@ const sections: { title: string; rows: Row[] }[] = [
 
 export default function Profile() {
   const router = useRouter();
-  const { user, setUser, setIsAuthed } = useApp();
+  const { user, setUser, setIsAuthed, setIsGuest } = useApp();
   const { balance, refresh: refreshWallet } = useWallet();
 
   useFocusEffect(
@@ -84,17 +84,25 @@ export default function Profile() {
   }
 
   const handleLogout = async () => {
-    try {
-      await signOut();
-      await signOutOAuth();
-    } catch (e) {
-      console.log('Firebase signout error:', e);
-    }
-    // Without this the stored uid survives and the auth gate would let the
-    // next launch straight back in as a signed-out rider.
+    const results = await Promise.allSettled([
+      signOut(),
+      signOutOAuth(),
+    ]);
+
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.warn(
+          index === 0 ? 'Firebase sign-out failed:' : 'Supabase sign-out failed:',
+          result.reason
+        );
+      }
+    });
+
+    // Always clear LinQ's local session, even if a provider sign-out fails.
     await clearSession();
     setUser(null);
     setIsAuthed(false);
+    setIsGuest(false);
     router.replace('/onboarding');
   };
 
@@ -119,7 +127,7 @@ export default function Profile() {
           <View style={styles.walletCopy}>
             <Text style={styles.walletLabel}>Wallet balance</Text>
             <Text style={styles.walletAmount} testID="profile-wallet-balance">
-              ₹{balance.toFixed(2)}
+              â‚¹{balance.toFixed(2)}
             </Text>
           </View>
           <Text style={styles.walletCta}>View</Text>
@@ -157,9 +165,9 @@ export default function Profile() {
           <View style={styles.stats}>
             <View style={styles.stat}><Text style={styles.statValue}>{user.trips}</Text><Text style={styles.statLabel}>Trips</Text></View>
             <View style={styles.statDivider} />
-            <View style={styles.stat}><Text style={[styles.statValue, { color: colors.success }]}>{user.co2Saved} kg</Text><Text style={styles.statLabel}>CO₂ Saved</Text></View>
+            <View style={styles.stat}><Text style={[styles.statValue, { color: colors.success }]}>{user.co2Saved} kg</Text><Text style={styles.statLabel}>COâ‚‚ Saved</Text></View>
             <View style={styles.statDivider} />
-            <View style={styles.stat}><Text style={[styles.statValue, { color: colors.primary }]}>{user.rating} ★</Text><Text style={styles.statLabel}>Rating</Text></View>
+            <View style={styles.stat}><Text style={[styles.statValue, { color: colors.primary }]}>{user.rating} â˜…</Text><Text style={styles.statLabel}>Rating</Text></View>
           </View>
         </View>
 
@@ -255,3 +263,4 @@ const styles = StyleSheet.create({
   logoutText: { color: colors.error, fontSize: font.size.base, fontWeight: font.weight.medium },
   version: { textAlign: 'center', color: colors.textTertiary, fontSize: font.size.xs, marginTop: spacing.lg },
 });
+

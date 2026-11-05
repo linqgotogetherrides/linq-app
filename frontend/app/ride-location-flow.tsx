@@ -24,6 +24,8 @@ import {
 } from '@/src/lib/location/duplicateGuard';
 import { buildSavedPlaces } from '@/src/lib/location/savedPlaces';
 import {
+  getCurrentLocation,
+  getLocationPermission,
   getSearchErrorMessage,
   reverseGeocodeLocation,
   searchLocations,
@@ -129,6 +131,45 @@ export default function RideLocationFlow() {
   const [resolvingLocation, setResolvingLocation] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const selectionRequestRef = useRef(0);
+  const mapTouchedRef = useRef(false);
+
+  // Automatically center Pickup on GPS only when permission was already granted.
+  // Never prompt for permission or overwrite a location manually selected by the rider.
+  useEffect(() => {
+    if (field !== 'pickup' || opponent) return undefined;
+
+    let active = true;
+
+    void (async () => {
+      try {
+        const permission = await getLocationPermission();
+        if (!active || !permission.granted || mapTouchedRef.current) return;
+
+        const current = await getCurrentLocation();
+        if (!active || mapTouchedRef.current) return;
+
+        if (
+          Number.isFinite(current.latitude) &&
+          Number.isFinite(current.longitude) &&
+          current.latitude >= -90 &&
+          current.latitude <= 90 &&
+          current.longitude >= -180 &&
+          current.longitude <= 180
+        ) {
+          setMapCoordinate({
+            latitude: current.latitude,
+            longitude: current.longitude,
+          });
+        }
+      } catch {
+        // Keep the Hyderabad fallback if GPS is unavailable.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [field, opponent]);
 
   const locationPermissionBlocked =
     locationStatus === 'permission_denied' || locationStatus === 'location_services_disabled';
@@ -218,6 +259,7 @@ export default function RideLocationFlow() {
 
   const handleSearchResult = useCallback(
     (suggestion: LocationSuggestion) => {
+      mapTouchedRef.current = true;
       setMapCoordinate(suggestion.coordinates);
       commit(savedLocationFromSuggestion(suggestion));
     },
@@ -227,6 +269,7 @@ export default function RideLocationFlow() {
   /** Reverse-geocodes a map tap. The request id discards stale lookups. */
   const handleMapTap = useCallback(
     async (coordinate: LocationCoordinates) => {
+      mapTouchedRef.current = true;
       if (opponent && isSameLocation(coordinateToLocation(coordinate), opponent)) {
         setDuplicateError(DUPLICATE_LOCATION_MESSAGE);
         return;
@@ -258,6 +301,7 @@ export default function RideLocationFlow() {
   );
 
   const handleMapCoordinateChange = useCallback((coordinate: LocationCoordinates) => {
+    mapTouchedRef.current = true;
     setMapCoordinate(coordinate);
   }, []);
 
@@ -362,6 +406,7 @@ export default function RideLocationFlow() {
             contentContainerStyle={styles.quickRow}
             testID="quick-selects"
           >
+            {field === 'pickup' && (
             <Pressable
               style={styles.quickChip}
               onPress={handleUseCurrentLocation}
@@ -378,6 +423,7 @@ export default function RideLocationFlow() {
               </View>
               <Text style={styles.quickChipText}>Current location</Text>
             </Pressable>
+            )}
 
             {quickSelectOptions.map(({ kind, place, displayLabel }) => (
               <Pressable
@@ -410,7 +456,7 @@ export default function RideLocationFlow() {
               coordinate={mapCoordinate}
               onCoordinateChange={handleMapCoordinateChange}
               onMapLocationSelected={(coordinate) => void handleMapTap(coordinate)}
-              onUseCurrentLocation={handleUseCurrentLocation}
+              onUseCurrentLocation={field === 'pickup' ? handleUseCurrentLocation : undefined}
               isLocating={isLocating}
               height={260}
             />

@@ -1,4 +1,4 @@
-import 'react-native-url-polyfill/auto';
+﻿import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
@@ -41,7 +41,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
  * The main client. It keeps the anon/publishable key as `apikey` and is used
  * for REST/realtime and, critically, for Google/Apple sign-in via
  * `supabase.auth`. LinQ does NOT migrate Firebase users to Supabase Auth, so this
- * client must keep its auth surface intact — that is why it does NOT take the
+ * client must keep its auth surface intact â€” that is why it does NOT take the
  * custom `accessToken` option (setting it replaces `supabase.auth` with a Proxy
  * that throws, which would break OAuth sign-in).
  */
@@ -51,6 +51,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    flowType: 'pkce',
   },
 });
 
@@ -65,7 +66,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  *   2. the Supabase access token, when one exists (Google/Apple OAuth users).
  *
  * When neither exists (signed out / web demo), the callback returns null and
- * @supabase/supabase-js falls back to the anon key — exactly today's behaviour,
+ * @supabase/supabase-js falls back to the anon key â€” exactly today's behaviour,
  * so no existing call breaks.
  *
  * The Firebase ID token is read live from getAuth().currentUser and is never
@@ -82,6 +83,7 @@ export const supabaseFunctions = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: false,
     persistSession: false,
     detectSessionInUrl: false,
+    flowType: 'pkce',
   },
   accessToken: async () => {
     const firebaseToken = await getIdToken();
@@ -94,3 +96,5 @@ export const supabaseFunctions = createClient(supabaseUrl, supabaseAnonKey, {
     }
   },
 });
+
+

@@ -25,11 +25,13 @@ export const PUBLIC_ROUTES = new Set([
   '/index',
   '/onboarding',
   '/login',
+  '/auth/callback',
   '/otp',
   '/account-creation',
   '/language',
   '/support',
   '/safety',
+  '/search-results',
   '/sos/confirm',
 ]);
 

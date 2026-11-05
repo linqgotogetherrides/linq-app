@@ -52,15 +52,31 @@ export default function SearchResults() {
     setLoading(true);
     setError(false);
     try {
-      const pickupLatitude = Number(params.pickupLatitude);
-      const pickupLongitude = Number(params.pickupLongitude);
-      const destinationLatitude = Number(params.destinationLatitude);
-      const destinationLongitude = Number(params.destinationLongitude);
+      const parseCoordinate = (
+        value: string | string[] | undefined,
+        min: number,
+        max: number
+      ): number | undefined => {
+        const raw = Array.isArray(value) ? value[0] : value;
+        if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+          return undefined;
+        }
+
+        return parsed;
+      };
+
+      const pickupLatitude = parseCoordinate(params.pickupLatitude, -90, 90);
+      const pickupLongitude = parseCoordinate(params.pickupLongitude, -180, 180);
+      const destinationLatitude = parseCoordinate(params.destinationLatitude, -90, 90);
+      const destinationLongitude = parseCoordinate(params.destinationLongitude, -180, 180);
       const pickupAccuracy = Number(params.pickupAccuracy);
       const pickupTimestamp = Number(params.pickupTimestamp);
       const destinationAccuracy = Number(params.destinationAccuracy);
       const destinationTimestamp = Number(params.destinationTimestamp);
-      const pickupCoordinates = Number.isFinite(pickupLatitude) && Number.isFinite(pickupLongitude)
+      const pickupCoordinates = pickupLatitude !== undefined && pickupLongitude !== undefined
         ? {
             latitude: pickupLatitude,
             longitude: pickupLongitude,
@@ -68,7 +84,7 @@ export default function SearchResults() {
             timestamp: Number.isFinite(pickupTimestamp) ? pickupTimestamp : undefined,
           }
         : undefined;
-      const destinationCoordinates = Number.isFinite(destinationLatitude) && Number.isFinite(destinationLongitude)
+      const destinationCoordinates = destinationLatitude !== undefined && destinationLongitude !== undefined
         ? {
             latitude: destinationLatitude,
             longitude: destinationLongitude,
@@ -186,7 +202,7 @@ export default function SearchResults() {
           fullWidth={false}
           onPress={() => {
             if (!user) {
-              router.push('/onboarding');
+              router.push('/login');
             } else {
               router.push({
                 pathname: '/create-ride',

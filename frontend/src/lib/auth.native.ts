@@ -1,4 +1,4 @@
-import {
+﻿import {
   getAuth,
   signInWithPhoneNumber as firebaseSignInWithPhoneNumber,
   signOut as firebaseSignOut,
@@ -41,3 +41,13 @@ export const getIdToken = async (forceRefresh = false): Promise<string | null> =
 
 /** Native is the build where Firebase actually issues tokens. */
 export const supportsFirebaseIdentity = (): boolean => true;
+
+
+/** Returns the currently persisted Firebase user's UID, if signed in. */
+export const getCurrentFirebaseUserId = async (): Promise<string | null> => {
+  try {
+    return getAuth().currentUser?.uid ?? null;
+  } catch {
+    return null;
+  }
+};

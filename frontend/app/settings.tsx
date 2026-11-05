@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Switch, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +13,7 @@ import { colors, spacing, font, radius } from '@/src/theme/tokens';
 
 export default function Settings() {
   const router = useRouter();
-  const { showToast, user, setUser, setIsAuthed } = useApp();
+  const { showToast, user, setUser, setIsAuthed, setIsGuest } = useApp();
   const [push, setPush] = useState(true);
   const [email, setEmail] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -36,14 +36,22 @@ export default function Settings() {
     }
     // The server row is gone; clear the provider sessions and local identity so
     // the app cannot re-enter the deleted account.
-    try {
-      await signOut();
-      await signOutOAuth();
-    } catch (e) {
-      console.log('Sign-out during deletion failed:', e);
-    }
+    const signOutResults = await Promise.allSettled([
+      signOut(),
+      signOutOAuth(),
+    ]);
+
+    signOutResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.warn(
+          index === 0 ? 'Firebase sign-out after deletion failed:' : 'Supabase sign-out after deletion failed:',
+          result.reason
+        );
+      }
+    });
     setUser(null);
     setIsAuthed(false);
+    setIsGuest(false);
     showToast('Your account has been deleted.');
     router.replace('/onboarding');
   };
@@ -77,7 +85,7 @@ export default function Settings() {
           onPress={() => setConfirmDelete(true)}
         >
           <Ionicons name="trash-outline" size={18} color={colors.error} />
-          <Text style={styles.deleteText}>{deleting ? 'Deleting…' : 'Delete Account'}</Text>
+          <Text style={styles.deleteText}>{deleting ? 'Deletingâ€¦' : 'Delete Account'}</Text>
         </Pressable>
         <Text style={styles.deleteHint}>
           Permanently removes your profile, rides, wallet history and safety data.
@@ -135,3 +143,4 @@ const styles = StyleSheet.create({
   deleteText: { color: colors.error, fontSize: font.size.base, fontWeight: font.weight.medium },
   deleteHint: { color: colors.textTertiary, fontSize: font.size.xs, textAlign: 'center', marginTop: spacing.sm, paddingHorizontal: spacing.md, lineHeight: 16 },
 });
+

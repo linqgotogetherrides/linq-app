@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import GuestPrompt from '@/src/components/GuestPrompt';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import { useCurrentLocation } from '@/src/hooks/useCurrentLocation';
@@ -108,6 +107,19 @@ export default function Home() {
             timestamp: currentLocation.timestamp,
           }
         : undefined);
+      if (
+        !origin ||
+        !Number.isFinite(origin.latitude) ||
+        !Number.isFinite(origin.longitude) ||
+        origin.latitude < -90 ||
+        origin.latitude > 90 ||
+        origin.longitude < -180 ||
+        origin.longitude > 180
+      ) {
+        if (requestId === nearbyRequestIdRef.current) setNearbyRides([]);
+        return;
+      }
+
       const data = await rideService.getRides({
         type: mode,
         pickupCoordinates: origin,

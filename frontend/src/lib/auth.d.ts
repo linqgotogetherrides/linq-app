@@ -1,4 +1,4 @@
-import type { ConfirmationResult } from '@react-native-firebase/auth';
+﻿import type { ConfirmationResult } from '@react-native-firebase/auth';
 
 export declare function signInWithPhoneNumber(phone: string): Promise<ConfirmationResult>;
 export declare function signOut(): Promise<void>;
@@ -25,3 +25,7 @@ export declare function getIdToken(forceRefresh?: boolean): Promise<string | nul
  * and refuse with an explanation rather than proceed unauthenticated.
  */
 export declare function supportsFirebaseIdentity(): boolean;
+
+
+/** Returns the currently persisted Firebase UID, or null when unavailable. */
+export declare function getCurrentFirebaseUserId(): Promise<string | null>;

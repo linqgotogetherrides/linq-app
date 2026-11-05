@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+﻿import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
  * Remembers who is signed in.
@@ -39,5 +39,32 @@ export async function clearSession(): Promise<void> {
     await AsyncStorage.removeItem(SESSION_KEY);
   } catch {
     // Nothing to do; the next successful sign-in overwrites it.
+  }
+}
+
+
+const GUEST_KEY = 'linq.session.guest';
+
+export async function saveGuestMode(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(GUEST_KEY, 'true');
+  } catch {
+    // Guest preference is local convenience state.
+  }
+}
+
+export async function clearGuestMode(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(GUEST_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
+
+export async function readGuestMode(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(GUEST_KEY)) === 'true';
+  } catch {
+    return false;
   }
 }
