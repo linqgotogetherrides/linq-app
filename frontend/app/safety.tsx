@@ -37,7 +37,7 @@ export default function Safety() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Activate SOS</Text>
-              <Text style={styles.sub}>25 second countdown, evidence and WhatsApp alert</Text>
+              <Text style={styles.sub}>10 second countdown, evidence and WhatsApp alert</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </Pressable>

@@ -8,7 +8,7 @@ import { colors } from '@/src/theme/tokens';
  * Legacy SOS entry point.
  *
  * Old links and native shortcuts still open `/sos/confirm`. The confirmation
- * step was replaced by the 25 second countdown, so forward here instead of
+ * step was replaced by the 10 second countdown, so forward here instead of
  * keeping a second, divergent activation path alive.
  */
 export default function LegacySosConfirmRedirect() {

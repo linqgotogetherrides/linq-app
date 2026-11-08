@@ -7,8 +7,8 @@ import { useRouter, type Href } from 'expo-router';
  *
  * This is the contract that the native home-screen / lock-screen controls call:
  *
- *   linq://sos          -> 25 second SOS countdown
- *   linq://sos/activate -> 25 second SOS countdown (deliberately NOT auto-activate)
+ *   linq://sos          -> 10 second SOS countdown
+ *   linq://sos/activate -> 10 second SOS countdown (deliberately NOT auto-activate)
  *
  * A widget or quick-settings tile opens this URL, which brings the app to the
  * countdown. It deliberately does not skip confirmation: a widget tap is easy

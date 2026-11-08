@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
-export const SOS_COUNTDOWN_MS = 25_000;
+// The SOS starts automatically after this short, cancellable countdown.
+// Ten seconds is long enough to undo an accidental tap and short enough that
+// the emergency flow begins without the rider having to hold anything.
+export const SOS_COUNTDOWN_MS = 10_000;
 
 type UseSosCountdownOptions = {
   enabled: boolean;
@@ -17,6 +20,10 @@ type UseSosCountdownOptions = {
  * recoverable when the app comes back: if the deadline already passed, the SOS
  * starts immediately. The completion callback is guarded so it can only run
  * once, even if the interval and AppState listener race.
+ *
+ * The countdown starts on mount and fires the evidence/WhatsApp pipeline
+ * automatically when it reaches zero. No press-and-hold is involved anywhere in
+ * this path.
  */
 export function useSosCountdown({
   enabled,

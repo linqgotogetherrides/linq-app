@@ -1,24 +1,23 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { colors, font, shadow, spacing } from '@/src/theme/tokens';
 
-const HOLD_DURATION_MS = 2000;
+const TAP_FEEDBACK_MS = 160;
 
 /**
- * Press-and-hold SOS trigger.
+ * Tap-to-start SOS trigger.
  *
- * A two second hold is required before `onComplete` fires, which is the
- * difference between a deliberate emergency and a pocket tap. Releasing early
- * resets the progress ring and nothing is dispatched.
+ * One tap opens the automatic SOS countdown. The countdown is the confirmation
+ * step, so this button does not require a press-and-hold.
  */
 export default function SosButton({
   onComplete,
   disabled = false,
   label = 'SOS',
-  sublabel = 'Hold 2s',
+  sublabel = 'Tap to start',
   size = 'default',
   testID = 'sos-button',
 }: {
@@ -30,38 +29,31 @@ export default function SosButton({
   testID?: string;
 }) {
   const progress = useRef(new Animated.Value(0)).current;
-  const [holding, setHolding] = useState(false);
   const completedRef = useRef(false);
   const dimension = size === 'large' ? 92 : 68;
 
-  const reset = useCallback(() => {
-    progress.stopAnimation();
-    progress.setValue(0);
-    setHolding(false);
-  }, [progress]);
-
   const start = useCallback(() => {
     if (disabled || completedRef.current) return;
-    setHolding(true);
+    completedRef.current = true;
+
+    progress.stopAnimation();
     Animated.timing(progress, {
       toValue: 1,
-      duration: HOLD_DURATION_MS,
-      easing: Easing.linear,
+      duration: TAP_FEEDBACK_MS,
+      easing: Easing.out(Easing.quad),
       useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (!finished) return;
-      completedRef.current = true;
-      setHolding(false);
-      onComplete();
-      // Allow the button to be used again after the flow completes.
-      setTimeout(() => {
-        completedRef.current = false;
-        progress.setValue(0);
-      }, 1200);
-    });
+    }).start();
+
+    onComplete();
+
+    // Allow the button to be used again after the flow completes.
+    setTimeout(() => {
+      completedRef.current = false;
+      progress.setValue(0);
+    }, 1200);
   }, [disabled, onComplete, progress]);
 
-  // A component unmount mid-hold must not leave the animation running.
+  // A component unmount mid-tap must not leave the animation running.
   useEffect(() => () => progress.stopAnimation(), [progress]);
 
   const ringScale = progress.interpolate({
@@ -78,12 +70,10 @@ export default function SosButton({
     <View style={styles.wrapper} testID={`${testID}-wrapper`}>
       <Pressable
         testID={testID}
-        onPressIn={start}
-        onPressOut={reset}
-        onTouchEnd={reset}
+        onPress={start}
         disabled={disabled}
         accessibilityRole="button"
-        accessibilityLabel={`${label}. Hold for two seconds to activate the emergency alert.`}
+        accessibilityLabel={`${label}. Tap to start the emergency countdown.`}
         style={[
           styles.button,
           { width: dimension, height: dimension, borderRadius: dimension / 2 },
@@ -120,9 +110,7 @@ export default function SosButton({
         </LinearGradient>
       </Pressable>
 
-      <Text style={[styles.hint, holding && styles.hintActive]}>
-        {holding ? 'Keep holding…' : sublabel}
-      </Text>
+      <Text style={styles.hint}>{sublabel}</Text>
     </View>
   );
 }
@@ -161,7 +149,6 @@ const styles = StyleSheet.create({
     fontSize: font.size.xs,
     color: colors.textTertiary,
   },
-  hintActive: { color: colors.error, fontWeight: font.weight.medium },
 });
 
-export { HOLD_DURATION_MS };
+export { TAP_FEEDBACK_MS };

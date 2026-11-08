@@ -10,12 +10,12 @@ Complete deployment, security and operations guide for the SOS safety system.
 |---|---|---|
 | Database | 5 incident tables + `sos_events`, 3 trigger guards, RLS, private storage bucket | migrations `20260925140000` … `20260925180000`, `20261104120000` |
 | Edge Functions | `sos-activate`, `sos-location`, `sos-end`, `sos-evidence`, `sos-admin`, `sos-upload` | deployed, JWT verification disabled |
-| Mobile | press-and-hold SOS → 25 s countdown → evidence → WhatsApp | this app |
+| Mobile | tap SOS → 10 s countdown → evidence → WhatsApp | this app |
 | Admin | `/admin/sos` dashboard + incident detail | role-gated |
 
 The reference flow (`sos-upload` + `sos_events`) is separate from the older
 incident/live-tracking system. It is the path the Home/Safety SOS control uses:
-a 25 second cancellable countdown, four photos, a five second video, a five
+a 10 second cancellable countdown, four photos, a five second video, a five
 second audio clip, `location.json`, a private Storage upload, then WhatsApp.
 
 ### Deploying the reference flow
@@ -229,8 +229,8 @@ lockout, and self-verification guards. Test rows are removed at the end.
 
 1. Sign in, open **Safety & Privacy**, and save an emergency contact with a
    valid WhatsApp phone number.
-2. Home → hold **SOS** for 2 seconds. The 25 second countdown opens.
-3. Tap **CANCEL SOS** once: no evidence is captured. Hold SOS again.
+2. Home → tap **SOS** once. The 10 second countdown opens.
+3. Tap **CANCEL SOS** once: no evidence is captured. Tap SOS again.
 4. Let the countdown finish (or tap **Start now**). Grant location, camera and
    microphone when prompted.
 5. Watch the native capture screen: back photos, front photos, five second

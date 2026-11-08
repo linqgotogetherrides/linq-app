@@ -300,7 +300,7 @@ export default function Home() {
             </Pressable>
           </View>
 
-          {/* SOS Safety Button - original pill styling, press-and-hold to fire. */}
+          {/* SOS Safety Button - one tap opens the automatic 10 second countdown. */}
           {!sosIsActive ? (
             <SosHoldButton
               onComplete={() => router.push('/sos/countdown' as Href)}
