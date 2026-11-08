@@ -31,6 +31,21 @@ verify_jwt = false
 [functions.sos-upload]
 verify_jwt = false
 
+[functions.create-razorpay-order]
+verify_jwt = false
+
+[functions.verify-razorpay-payment]
+verify_jwt = false
+
+[functions.razorpay-callback]
+verify_jwt = false
+
+[functions.razorpay-webhook]
+verify_jwt = false
+
+[functions.complete-ride]
+verify_jwt = false
+
 [api]
 enabled = true
 # Port to use for the API URL.

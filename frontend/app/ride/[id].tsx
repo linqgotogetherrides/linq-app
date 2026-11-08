@@ -132,6 +132,7 @@ export default function RideDetails() {
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [completing, setCompleting] = useState(false);
 
   if (!ride) {
     return (
