@@ -92,6 +92,10 @@ export interface User {
   officeAddress?: string;
   collegeAddress?: string;
   savedLocations?: SavedUserLocations;
+  /** Server-granted subscription tier. Undefined means free. */
+  plan?: Plan;
+  /** ISO timestamp at which the paid tier ends. */
+  planExpiresAt?: string;
 }
 
 export interface Ride {

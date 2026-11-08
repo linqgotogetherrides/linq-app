@@ -14,6 +14,8 @@ import type {
 import { supabase } from '@/src/lib/supabase';
 import { ensureUserProfile } from '@/src/services/userProfile';
 import { clearSession, readSession } from '@/src/services/session';
+import { isLegacyWebSession } from '@/src/lib/authIdentity';
+import { hasActivePlan, resolvePlan } from '@/src/lib/planAccess';
 import { rideRequestService } from '@/src/services/rideRequestService';
 import { savedPlaceKey } from '@/src/lib/location/savedPlaces';
 
@@ -53,7 +55,8 @@ interface AppContextValue {
   access: AccessState;
   useRequest: () => boolean;
   useChat: () => boolean;
-  upgradePlan: (plan: 'yearly' | 'twoYear') => void;
+  /** Refreshes the server-granted plan after a verified payment. */
+  upgradePlan: (plan: 'yearly' | 'twoYear') => Promise<void>;
   singleUnlock: () => void;
   toast: string | null;
   showToast: (m: string) => void;
@@ -181,6 +184,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     setGuestMode(false);
     setLoginPromptVisible(false);
+  }, [user]);
+
+  // Signing out must not leave the previous rider's plan in memory for a guest
+  // or for the next account that signs in on this device.
+  React.useEffect(() => {
+    if (!user) {
+      setAccess(defaultAccess);
+    }
   }, [user]);
 
   const showToast = useCallback((m: string) => {
@@ -400,6 +411,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   /** Maps a user_profiles row onto the app's User shape and publishes it. */
   const mapAndSet = useCallback((data: Record<string, any>): User => {
+    // The backend grants plans; the client only resolves whether the stored
+    // expiry is still in the future. An expired or half-written row is free.
+    const resolvedPlan = resolvePlan(data.plan, data.plan_expires_at);
     const mappedUser: User = {
       id: data.id,
       name: data.name || '',
@@ -422,7 +436,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       officeAddress: data.office_address || undefined,
       collegeAddress: data.college_address || undefined,
       savedLocations: normalizeSavedLocations(data.saved_locations),
+      plan: resolvedPlan.plan === 'free' ? undefined : resolvedPlan.plan,
+      planExpiresAt: resolvedPlan.planExpiresAt,
     };
+    setAccess((current) => ({
+      ...current,
+      plan: resolvedPlan.plan,
+      planExpiresAt: resolvedPlan.planExpiresAt,
+    }));
     setUser(mappedUser);
     setIsAuthed(true);
     // A real account always ends guest browsing. This also clears a stale guest
@@ -481,6 +502,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const storedUid = await readSession();
         if (!storedUid) return;
 
+        // The retired web phone stub minted `web-uid-<phone>` ids from
+        // unverified input. Drop those instead of restoring an identity that no
+        // server ever issued.
+        if (isLegacyWebSession(storedUid)) {
+          await clearSession();
+          return;
+        }
+
         await fetchUserProfile(storedUid);
         if (cancelled) return;
 
@@ -506,23 +535,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const useRequest = useCallback(() => {
-    if (access.plan !== 'free') return true;
+    if (hasActivePlan(access)) return true;
     if (access.freeRequestsRemaining <= 0) return false;
     setAccess((a) => ({ ...a, freeRequestsRemaining: a.freeRequestsRemaining - 1 }));
     return true;
-  }, [access.plan, access.freeRequestsRemaining]);
+  }, [access]);
 
   const useChat = useCallback(() => {
-    if (access.plan !== 'free') return true;
+    if (hasActivePlan(access)) return true;
     if (access.freeChatsRemaining <= 0) return false;
     setAccess((a) => ({ ...a, freeChatsRemaining: a.freeChatsRemaining - 1 }));
     return true;
-  }, [access.plan, access.freeChatsRemaining]);
+  }, [access]);
 
-  const upgradePlan = useCallback((plan: 'yearly' | 'twoYear') => {
-    setAccess({ plan, freeRequestsRemaining: 5, freeChatsRemaining: 5 });
-    showToast(`${plan === 'yearly' ? 'Yearly' : '2 Year'} plan activated`);
-  }, [showToast]);
+  /**
+   * Called after Razorpay verification succeeds. The Edge Function has already
+   * written the plan, so this re-reads the profile instead of trusting a local
+   * state change. If the write is still in flight, the next launch restores it.
+   */
+  const upgradePlan = useCallback(async (plan: 'yearly' | 'twoYear') => {
+    const uid = userRef.current?.id;
+    if (!uid) {
+      showToast('Sign in to activate your plan.');
+      return;
+    }
+
+    const refreshed = await fetchUserProfile(uid);
+    const actual = refreshed
+      ? resolvePlan(refreshed.plan, refreshed.planExpiresAt)
+      : null;
+
+    if (!actual || actual.plan === 'free') {
+      showToast('Payment received. Your plan will appear shortly.');
+      return;
+    }
+
+    showToast(`${actual.plan === 'yearly' ? 'Yearly' : '2 Year'} plan activated`);
+  }, [fetchUserProfile, showToast]);
 
   const singleUnlock = useCallback(() => {
     setAccess((a) => ({ ...a, freeRequestsRemaining: a.freeRequestsRemaining + 1 }));

@@ -23,6 +23,9 @@ export default function Login() {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const valid = phone.replace(/\D/g, '').length >= 10;
+  // Phone OTP requires Firebase, which only ships in the native build. Web must
+  // never fall back to an unverified stub (see src/lib/auth.web.ts).
+  const isWeb = Platform.OS === 'web';
 
   const handleSkip = () => {
     enterGuestMode();
@@ -31,6 +34,10 @@ export default function Login() {
 
   const handleLogin = async () => {
     if (!valid) return;
+    if (isWeb) {
+      showToast('Phone sign-in is not available on the web. Use Google or the mobile app.');
+      return;
+    }
     try {
       setLoading(true);
       const phoneStr = phone.replace(/\D/g, '');
@@ -98,38 +105,53 @@ export default function Login() {
           </View>
 
           <View style={{ flex: 1, justifyContent: 'center', paddingVertical: spacing['2xl'] }}>
-            <Image 
-              source={require('@/assets/images/enter phone no. screen.png')} 
-              style={{ width: '100%', height: 180, marginBottom: spacing.xl }} 
-              resizeMode="contain" 
-            />
-            <View style={styles.card}>
-              <Text style={styles.title}>Enter your phone number to get started</Text>
-              <View style={styles.inputRow}>
-                <View style={styles.cc}>
-                  <Text style={styles.flag}>🇮🇳</Text>
-                  <Text style={styles.ccText}>+91</Text>
-                  <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+            {isWeb ? (
+              <View style={styles.card} testID="web-auth-lockdown">
+                <View style={styles.noticeHeader}>
+                  <Ionicons name="lock-closed" size={20} color={colors.primary} />
+                  <Text style={styles.noticeTitle}>Phone sign-in is disabled on the web</Text>
                 </View>
-                <TextInput
-                  testID="phone-input"
-                  value={phone}
-                  onChangeText={setPhone}
-                  placeholder="Mobile number"
-                  placeholderTextColor={colors.textTertiary}
-                  keyboardType="phone-pad"
-                  style={styles.input}
-                  maxLength={10}
-                />
+                <Text style={styles.noticeText}>
+                  For your security, phone numbers can only be verified in the Linq
+                  mobile app. Continue with Google here, or open Linq on your phone.
+                </Text>
               </View>
-              <PrimaryButton
-                testID="login-continue-button"
-                title={loading ? "Sending OTP..." : "Continue"}
-                iconRight={loading ? undefined : "arrow-forward"}
-                disabled={!valid || loading}
-                onPress={handleLogin}
-              />
-            </View>
+            ) : (
+              <>
+                <Image 
+                  source={require('@/assets/images/enter phone no. screen.png')} 
+                  style={{ width: '100%', height: 180, marginBottom: spacing.xl }} 
+                  resizeMode="contain" 
+                />
+                <View style={styles.card}>
+                  <Text style={styles.title}>Enter your phone number to get started</Text>
+                  <View style={styles.inputRow}>
+                    <View style={styles.cc}>
+                      <Text style={styles.flag}>🇮🇳</Text>
+                      <Text style={styles.ccText}>+91</Text>
+                      <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+                    </View>
+                    <TextInput
+                      testID="phone-input"
+                      value={phone}
+                      onChangeText={setPhone}
+                      placeholder="Mobile number"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="phone-pad"
+                      style={styles.input}
+                      maxLength={10}
+                    />
+                  </View>
+                  <PrimaryButton
+                    testID="login-continue-button"
+                    title={loading ? "Sending OTP..." : "Continue"}
+                    iconRight={loading ? undefined : "arrow-forward"}
+                    disabled={!valid || loading}
+                    onPress={handleLogin}
+                  />
+                </View>
+              </>
+            )}
 
             <View style={{ height: spacing.lg }} />
 
@@ -158,6 +180,9 @@ const styles = StyleSheet.create({
   skip: { fontSize: font.size.base, color: colors.primary, fontWeight: font.weight.medium },
   card: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, backgroundColor: colors.surface },
   title: { fontSize: font.size.base, color: colors.textSecondary, marginBottom: spacing.md },
+  noticeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  noticeTitle: { flex: 1, fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium },
+  noticeText: { fontSize: font.size.sm, color: colors.textSecondary, lineHeight: 20 },
   inputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, marginBottom: spacing.md, backgroundColor: colors.surfaceSecondary },
   cc: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, height: 48, borderRightWidth: 1, borderRightColor: colors.border },
   flag: { fontSize: 16, marginRight: 4 },

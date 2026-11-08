@@ -24,11 +24,6 @@ import { supabase } from '@/src/lib/supabase';
  * `ignoreDuplicates` makes this insert-only. It must never overwrite a profile
  * that already exists.
  */
-function phoneFromUserId(userId: string): string | undefined {
-  const match = /web-uid-\+?([0-9]{10,15})$/.exec(userId);
-  return match ? `+${match[1]}` : undefined;
-}
-
 export async function ensureUserProfile(params: {
   userId: string;
   name?: string | null;
@@ -41,10 +36,9 @@ export async function ensureUserProfile(params: {
   if (params.email) row.email = params.email;
   if (params.avatarUrl) row.avatar_url = params.avatarUrl;
 
-  // The web sign-in mock builds ids as `web-uid-+<number>`. Recovering the number
-  // is not a guess: it is the phone the rider actually entered at sign-in.
-  const phone = params.phone ?? phoneFromUserId(params.userId);
-  if (phone) row.phone_number = phone;
+  // Only a phone the rider explicitly supplied may be stored. Never infer one
+  // from the user id: the retired web stub encoded arbitrary numbers there.
+  if (params.phone) row.phone_number = params.phone;
 
   const { error } = await supabase
     .from('user_profiles')

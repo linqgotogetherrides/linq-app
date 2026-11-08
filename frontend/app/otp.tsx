@@ -29,6 +29,14 @@ export default function Otp() {
     }
   }, [remaining]);
 
+  // Phone OTP exists only in the native build. A direct /otp visit on web must
+  // never render a pretend verification screen.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    showToast('Phone sign-in is not available on the web. Use Google or the mobile app.');
+    router.replace('/login');
+  }, [router, showToast]);
+
   const canContinue = otp.length === 6;
 
   /**
@@ -38,6 +46,11 @@ export default function Otp() {
    */
   const handleResend = async () => {
     if (remaining > 0 || resending) return;
+    if (Platform.OS === 'web') {
+      showToast('Phone sign-in is not available on the web.');
+      router.replace('/login');
+      return;
+    }
     if (!phone) {
       showToast('Phone number missing. Please go back and try again.');
       return;
@@ -57,6 +70,11 @@ export default function Otp() {
   };
 
   const handleVerify = async () => {
+    if (Platform.OS === 'web') {
+      showToast('Phone sign-in is not available on the web.');
+      router.replace('/login');
+      return;
+    }
     if (!confirmResult) {
       showToast('Session expired. Please request a new OTP.');
       router.replace('/login');
@@ -119,6 +137,18 @@ export default function Otp() {
       setLoading(false);
     }
   };
+
+  if (Platform.OS === 'web') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.xl }}>
+          <Text style={styles.sub}>
+            Phone sign-in is not available on the web. Redirecting to sign in…
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} testID="otp-screen">

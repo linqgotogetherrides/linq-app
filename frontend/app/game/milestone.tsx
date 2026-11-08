@@ -28,7 +28,7 @@ const REGULAR_YEARLY_Paise = 19900;
  */
 export default function GameMilestone() {
   const router = useRouter();
-  const { user, showToast } = useApp();
+  const { user, showToast, upgradePlan } = useApp();
   const { profile, wins, milestoneUnlocked, claimMilestone, refresh } = useGame();
   const [claiming, setClaiming] = useState(false);
   const [purchased, setPurchased] = useState(false);
@@ -123,11 +123,13 @@ export default function GameMilestone() {
                   style={styles.buyBtn}
                   textStyle={styles.buyText}
                   onError={(message) => showToast(message)}
-                  onSuccess={() => {
+                  onSuccess={async () => {
                     setPurchased(true);
                     void claimMilestone();
                     void refresh();
-                    showToast('Annual plan unlocked. Welcome to LinQ Annual!');
+                    // The backend grants the annual plan before verification
+                    // returns. Re-read it so the paid access survives a restart.
+                    await upgradePlan('yearly');
                   }}
                 >
                   <Ionicons name="flash" size={16} color={colors.textInverse} />

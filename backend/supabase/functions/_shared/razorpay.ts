@@ -17,6 +17,13 @@ export const PLAN_AMOUNTS: Record<string, number> = {
   game_annual: 5900,
 };
 
+/** Products that grant a subscription instead of a wallet balance. */
+export const PLAN_PRODUCTS = new Set(["yearly", "two_year", "game_annual"]);
+
+export function isPlanProduct(product: string | null | undefined): boolean {
+  return typeof product === "string" && PLAN_PRODUCTS.has(product);
+}
+
 /** Plans whose availability depends on a server-side unlock, not on price. */
 export const GATED_PLANS: Record<
   string,
@@ -177,11 +184,35 @@ export async function createRazorpayOrder(input: CreateOrderInput) {
     throw new PaymentError(400, "A valid receipt is required");
   }
 
+  const userId = typeof input.userId === "string" ? input.userId.trim() : "";
+  const knownPlan = Boolean(
+    input.plan && Object.prototype.hasOwnProperty.call(PLAN_AMOUNTS, input.plan),
+  );
+
   let finalAmount = amount;
-  if (input.plan && Object.prototype.hasOwnProperty.call(PLAN_AMOUNTS, input.plan)) {
+  if (knownPlan && input.plan) {
     finalAmount = PLAN_AMOUNTS[input.plan];
     if (amount !== finalAmount) {
       throw new PaymentError(400, "Amount does not match the selected plan");
+    }
+  }
+
+  // Every known product belongs to a signed-in rider. Recording the buyer on
+  // the order is what lets a verified payment restore the entitlement later.
+  if (knownPlan) {
+    if (!userId) {
+      throw new PaymentError(400, "Sign in to purchase this plan");
+    }
+    const { data: profile, error: profileError } = await supabaseAdmin()
+      .from("user_profiles")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profileError) {
+      throw new PaymentError(502, "Could not verify the rider profile");
+    }
+    if (!profile) {
+      throw new PaymentError(400, "Sign in again to purchase this plan");
     }
   }
 
@@ -189,7 +220,6 @@ export async function createRazorpayOrder(input: CreateOrderInput) {
   // Without this anyone could just order the Rs 59 plan without playing.
   if (input.plan && GATED_PLANS[input.plan]) {
     const gate = GATED_PLANS[input.plan];
-    const userId = typeof input.userId === "string" ? input.userId.trim() : "";
     if (!userId) {
       throw new PaymentError(400, "Sign in to purchase this plan");
     }
@@ -216,6 +246,7 @@ export async function createRazorpayOrder(input: CreateOrderInput) {
   });
 
   const { error } = await supabaseAdmin().from("payments").insert({
+    user_id: userId || null,
     razorpay_order_id: order.id,
     receipt,
     amount: Number(order.amount),
@@ -280,7 +311,21 @@ export async function verifyAndRecordPayment(
     throw new PaymentError(400, "Payment currency is invalid");
   }
 
-  const { data, error } = await supabaseAdmin()
+  const admin = supabaseAdmin();
+  const { data: pending, error: pendingError } = await admin
+    .from("payments")
+    .select("id, user_id, product")
+    .eq("razorpay_order_id", cleanOrderId)
+    .maybeSingle();
+
+  if (pendingError) {
+    throw new PaymentError(502, "Unable to read the payment order");
+  }
+  if (!pending) {
+    throw new PaymentError(500, "The Razorpay order was not found in Supabase");
+  }
+
+  const { data, error } = await admin
     .from("payments")
     .update({
       razorpay_payment_id: payment.id,
@@ -298,6 +343,36 @@ export async function verifyAndRecordPayment(
   }
   if (!data) {
     throw new PaymentError(500, "The Razorpay order was not found in Supabase");
+  }
+
+  // Apply the plan even when the payment row was already verified. The ledger is
+  // keyed by order id, so repeated verify/webhook/callback deliveries are a
+  // no-op, while a retry repairs a run that failed between the two writes.
+  if (isPlanProduct(pending.product)) {
+    if (!pending.user_id) {
+      // Orders created before the buyer was recorded cannot be attributed
+      // safely. They stay verified so the payment itself is not lost.
+      console.warn(
+        `[razorpay] Verified plan order ${cleanOrderId} has no user_id; plan not applied`,
+      );
+      return;
+    }
+
+    const { error: grantError } = await admin.rpc("grant_plan_for_payment", {
+      p_order_id: cleanOrderId,
+      p_payment_id: payment.id,
+      p_user_id: pending.user_id,
+      p_product: pending.product,
+      p_amount: payment.amount,
+      p_currency: paymentCurrency,
+    });
+
+    if (grantError) {
+      // The payment is verified; throw so the webhook retries. The grant is
+      // idempotent, so a transient failure cannot lose the plan.
+      console.error("[razorpay] Plan activation failed:", grantError);
+      throw new PaymentError(502, "Payment verified but the plan could not be activated");
+    }
   }
 }
 
