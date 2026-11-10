@@ -26,12 +26,63 @@ type RidesTab = 'posted' | 'accepted';
 
 export default function Rides() {
   const router = useRouter();
-  const { user, rideRequests, showToast } = useApp();
+  const { user, rideRequests, respondToRideRequest, refreshRideActivity, showToast } = useApp();
   const [activeTab, setActiveTab] = useState<RidesTab>('posted');
   const [rides, setRides] = useState<Ride[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyRideId, setBusyRideId] = useState<string | null>(null);
+
+  const pendingRequests = useMemo(
+    () => rideRequests.filter((request) => request.status === 'pending' && request.ride),
+    [rideRequests],
+  );
+
+  const handleRespondToRequest = async (requestId: string, decision: 'accepted' | 'declined') => {
+    try {
+      await respondToRideRequest(requestId, decision);
+      showToast(decision === 'accepted' ? 'Request accepted! Chat is now open.' : 'Request declined.');
+      await Promise.all([loadRides(), refreshRideActivity()]);
+    } catch {
+      showToast('Could not respond to request.');
+    }
+  };
+
+  const handleStartRide = async (ride: Ride) => {
+    if (!user?.id) return;
+    setBusyRideId(ride.id);
+    try {
+      const res = await rideService.startRide(ride.id, user.id);
+      if (res.ok) {
+        showToast('Journey started! Drive safely.');
+        await loadRides();
+      } else {
+        showToast(res.error || 'Could not start journey');
+      }
+    } catch {
+      showToast('Failed to start journey');
+    } finally {
+      setBusyRideId(null);
+    }
+  };
+
+  const handleCompleteRide = async (ride: Ride) => {
+    if (!user?.id) return;
+    setBusyRideId(ride.id);
+    try {
+      const res = await rideService.completeRideTrip(ride.id, user.id);
+      if (res.ok) {
+        showToast('Ride completed! ₹5 credited to your wallet.');
+        await loadRides();
+      } else {
+        showToast(res.error || 'Could not complete ride');
+      }
+    } catch {
+      showToast('Failed to complete ride');
+    } finally {
+      setBusyRideId(null);
+    }
+  };
 
   const loadRides = useCallback(async () => {
     if (!user?.id) {
@@ -227,6 +278,53 @@ export default function Rides() {
           />
         }
       >
+        {/* Incoming Ride Requests Section */}
+        {pendingRequests.length > 0 ? (
+          <View style={styles.pendingSection} testID="incoming-requests-section">
+            <View style={styles.pendingHeader}>
+              <View style={styles.pendingBadge}>
+                <Ionicons name="notifications" size={13} color={colors.textInverse} />
+                <Text style={styles.pendingBadgeText}>{pendingRequests.length}</Text>
+              </View>
+              <Text style={styles.pendingTitle}>Incoming Ride Requests</Text>
+            </View>
+            {pendingRequests.map((req) => (
+              <View key={req.id} style={styles.pendingCard}>
+                <View style={styles.pendingInfoRow}>
+                  {req.requester.avatarUrl ? (
+                    <Image source={{ uri: req.requester.avatarUrl }} style={styles.pendingAvatar} />
+                  ) : (
+                    <View style={styles.pendingAvatarFallback}>
+                      <Ionicons name="person" size={16} color={colors.primary} />
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pendingName}>{req.requester.name}</Text>
+                    <Text style={styles.pendingSub} numberOfLines={1}>
+                      {req.ride.pickup.label} → {req.ride.destination.label}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.pendingActionRow}>
+                  <Pressable
+                    style={[styles.reqBtn, styles.declineBtn]}
+                    onPress={() => void handleRespondToRequest(req.id, 'declined')}
+                  >
+                    <Text style={styles.declineBtnText}>Decline</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.reqBtn, styles.acceptBtn]}
+                    onPress={() => void handleRespondToRequest(req.id, 'accepted')}
+                  >
+                    <Ionicons name="checkmark" size={14} color={colors.textInverse} />
+                    <Text style={styles.acceptBtnText}>Accept</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {loading ? (
           <View style={styles.loadingWrap} testID="rides-loading">
             <ActivityIndicator size="small" color={colors.primary} />
@@ -270,6 +368,16 @@ export default function Rides() {
               }
               onSearchAgain={
                 ride.status === 'draft' ? undefined : () => handleSearchAgain(ride)
+              }
+              onStartRide={
+                ride.status === 'draft' || ride.status === 'cancelled' || ride.status === 'completed'
+                  ? undefined
+                  : () => void handleStartRide(ride)
+              }
+              onCompleteRide={
+                ride.status === 'in_progress'
+                  ? () => void handleCompleteRide(ride)
+                  : undefined
               }
               expired={isExpired(ride)}
               filled={isFilled(ride)}
@@ -327,6 +435,8 @@ function RideManagementCard({
   onClosePost,
   onKeepOpen,
   onPostAnother,
+  onStartRide,
+  onCompleteRide,
 }: {
   ride: Ride;
   acceptedRequest?: RideRequest;
@@ -344,8 +454,12 @@ function RideManagementCard({
   onClosePost?: () => void;
   onKeepOpen?: () => void;
   onPostAnother?: () => void;
+  onStartRide?: () => void;
+  onCompleteRide?: () => void;
 }) {
   const isDraft = ride.status === 'draft';
+  const isInProgress = ride.status === 'in_progress';
+  const isCompleted = ride.status === 'completed';
   const confirmed = ride.status === 'confirmed' || Boolean(acceptedRequest);
   const schedule = [ride.time, ride.date].filter(Boolean).join(' • ');
 
@@ -365,21 +479,35 @@ function RideManagementCard({
             styles.statusBadge,
             isDraft
               ? styles.statusBadgeDraft
-              : confirmed
-                ? styles.statusBadgeConfirmed
-                : styles.statusBadgeActive,
+              : isInProgress
+                ? styles.statusBadgeInProgress
+                : isCompleted
+                  ? styles.statusBadgeCompleted
+                  : confirmed
+                    ? styles.statusBadgeConfirmed
+                    : styles.statusBadgeActive,
           ]}
         >
           <Ionicons
             name={
               isDraft
                 ? 'document-text-outline'
-                : confirmed
-                  ? 'checkmark-circle'
-                  : 'radio-button-on'
+                : isInProgress
+                  ? 'navigate'
+                  : isCompleted || confirmed
+                    ? 'checkmark-circle'
+                    : 'radio-button-on'
             }
             size={13}
-            color={isDraft ? colors.textSecondary : confirmed ? colors.success : colors.primary}
+            color={
+              isDraft
+                ? colors.textSecondary
+                : isInProgress
+                  ? '#D97706'
+                  : isCompleted || confirmed
+                    ? colors.success
+                    : colors.primary
+            }
           />
           <Text
             style={[
@@ -387,13 +515,23 @@ function RideManagementCard({
               {
                 color: isDraft
                   ? colors.textSecondary
-                  : confirmed
-                    ? colors.success
-                    : colors.primary,
+                  : isInProgress
+                    ? '#D97706'
+                    : isCompleted || confirmed
+                      ? colors.success
+                      : colors.primary,
               },
             ]}
           >
-            {isDraft ? 'Draft' : confirmed ? 'Confirmed' : 'Posted'}
+            {isDraft
+              ? 'Draft'
+              : isInProgress
+                ? 'In Progress'
+                : isCompleted
+                  ? 'Completed'
+                  : confirmed
+                    ? 'Confirmed'
+                    : 'Posted'}
           </Text>
         </View>
         <Text style={styles.typeText}>{ride.type.toUpperCase()}</Text>
@@ -486,6 +624,31 @@ function RideManagementCard({
             ) : null}
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </View>
+
+          {/* Trip Lifecycle Action */}
+          {ride.status === 'in_progress' && onCompleteRide ? (
+            <View style={styles.lifecycleActionRow}>
+              <Pressable
+                style={[styles.lifecycleBtn, styles.completeBtn]}
+                onPress={onCompleteRide}
+                disabled={busy}
+              >
+                <Ionicons name="checkmark-done" size={15} color={colors.textInverse} />
+                <Text style={styles.lifecycleBtnText}>Complete Ride</Text>
+              </Pressable>
+            </View>
+          ) : (ride.status === 'active' || confirmed) && onStartRide && !expired ? (
+            <View style={styles.lifecycleActionRow}>
+              <Pressable
+                style={[styles.lifecycleBtn, styles.startBtn]}
+                onPress={onStartRide}
+                disabled={busy}
+              >
+                <Ionicons name="play" size={15} color={colors.textInverse} />
+                <Text style={styles.lifecycleBtnText}>Start Journey</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {expired ? (
             <View style={[styles.notice, styles.noticeClosed]} testID={`ride-expired-${ride.id}`}>
@@ -852,5 +1015,137 @@ const styles = StyleSheet.create({
     fontSize: font.size.sm,
     color: colors.primary,
     fontWeight: font.weight.medium,
+  },
+  statusBadgeInProgress: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  statusBadgeCompleted: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#16A34A',
+  },
+  lifecycleActionRow: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+  },
+  lifecycleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+  },
+  startBtn: {
+    backgroundColor: colors.primary,
+  },
+  completeBtn: {
+    backgroundColor: '#16A34A',
+  },
+  lifecycleBtnText: {
+    color: colors.textInverse,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.semibold,
+  },
+  pendingSection: {
+    backgroundColor: '#EFF6FF',
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  pendingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  pendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  pendingBadgeText: {
+    color: colors.textInverse,
+    fontSize: 11,
+    fontWeight: font.weight.bold,
+  },
+  pendingTitle: {
+    fontSize: font.size.sm,
+    fontWeight: font.weight.bold,
+    color: colors.textPrimary,
+  },
+  pendingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pendingInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  pendingAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  pendingAvatarFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingName: {
+    fontSize: font.size.sm,
+    fontWeight: font.weight.semibold,
+    color: colors.textPrimary,
+  },
+  pendingSub: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  pendingActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: 8,
+  },
+  reqBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  declineBtn: {
+    backgroundColor: colors.surfaceSecondary,
+  },
+  declineBtnText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: font.weight.medium,
+  },
+  acceptBtn: {
+    backgroundColor: '#16A34A',
+  },
+  acceptBtnText: {
+    fontSize: 11,
+    color: colors.textInverse,
+    fontWeight: font.weight.semibold,
   },
 });

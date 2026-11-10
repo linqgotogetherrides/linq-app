@@ -196,6 +196,8 @@ export default function Home() {
         destinationAccuracy: destinationCoordinates?.accuracy?.toString(),
         destinationTimestamp: destinationCoordinates?.timestamp?.toString(),
         travelTime,
+        travelDate: travelDate || undefined,
+        selectedDays: selectedDays.length > 0 ? selectedDays.join(',') : undefined,
       },
     });
   };

@@ -230,9 +230,10 @@ async function loadDbRides(includeAllStatuses = false): Promise<Ride[]> {
   let query = supabase
     .from('rides')
     .select('*, creator:user_profiles!rides_user_id_fkey(*)')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(100);
 
-  if (!includeAllStatuses) query = query.eq('status', 'active');
+  if (!includeAllStatuses) query = query.in('status', ['active', 'confirmed', 'in_progress']);
   const { data, error } = await query;
   if (error) {
     console.warn('Supabase rides query failed:', error.message);
@@ -245,7 +246,11 @@ export type SearchQuery = {
   pickup?: string;
   destination?: string;
   time?: string;
+  date?: string;
+  days?: string[];
   type?: RideType;
+  seatsNeeded?: number;
+  womenOnly?: boolean;
   pickupCoordinates?: LocationCoordinates;
   destinationCoordinates?: LocationCoordinates;
   radiusMeters?: number;
@@ -320,6 +325,83 @@ export const rideService = {
         latitude: query.destinationCoordinates.latitude,
         longitude: query.destinationCoordinates.longitude,
       };
+
+      // 1. Try High-Performance PostGIS Corridor RPC
+      try {
+        const { data: rpcMatches, error: rpcErr } = await supabase.rpc('find_pooling_matches', {
+          p_pickup_lon: userPickup.longitude,
+          p_pickup_lat: userPickup.latitude,
+          p_dropoff_lon: userDrop.longitude,
+          p_dropoff_lat: userDrop.latitude,
+          p_travel_time: toSupabaseTime(query.time),
+          p_travel_date: toNullableDate(query.date),
+          p_selected_days: dayLabelsToIndexes(query.days),
+          p_seats_needed: query.seatsNeeded ?? 1,
+          p_women_only: Boolean(query.womenOnly),
+          p_max_deviation_meters: query.radiusMeters ?? 5000,
+          p_exclude_user_id: query.excludeUserId,
+        });
+
+        if (!rpcErr && Array.isArray(rpcMatches) && rpcMatches.length > 0) {
+          const userRoute = await fetchOSRMRoute(userPickup, userDrop);
+          return (rpcMatches as DbRow[]).map((row: DbRow): Ride => ({
+            id: asString(row.ride_id),
+            creator: {
+              id: asString(row.user_id),
+              name: asString(row.creator_name, 'Rider'),
+              phone: normalizePhone(row.creator_phone),
+              gender: (row.creator_gender as any) || undefined,
+              avatarUrl: normalizeAvatar(row.creator_avatar_url),
+              rating: row.creator_rating != null ? asNumber(row.creator_rating) : undefined,
+              trips: row.creator_total_trips != null ? asNumber(row.creator_total_trips) : undefined,
+              verification: row.creator_verification_status === 'verified' ? 'verified' : 'not_verified',
+            },
+            type: (asString(row.ride_type, 'daily') as RideType),
+            pickup: {
+              label: asString(row.pickup_address),
+              address: asString(row.pickup_address),
+              latitude: asNumber(row.pickup_lat),
+              longitude: asNumber(row.pickup_lon),
+            },
+            destination: {
+              label: asString(row.dropoff_address),
+              address: asString(row.dropoff_address),
+              latitude: asNumber(row.dropoff_lat),
+              longitude: asNumber(row.dropoff_lon),
+            },
+            date: formatTravelDate(asString(row.travel_date)) || undefined,
+            dateISO: toIsoDate(asString(row.travel_date)),
+            time: displayTime(row.travel_time),
+            returnTime: displayTime(row.return_time),
+            days: indexesToDayLabels(row.selected_days),
+            pricePerSeat: asNumber(row.price_per_seat),
+            seatsTotal: asNumber(row.available_seats) + asNumber(row.occupied_seats, 1),
+            seatsAvailable: asNumber(row.available_seats),
+            vehicle: row.vehicle_kind
+              ? {
+                  id: asString(row.ride_id),
+                  kind: row.vehicle_kind as VehicleKind,
+                  model: asString(row.vehicle_model) || undefined,
+                  numberPlate: asString(row.vehicle_plate),
+                  seats: asNumber(row.available_seats) + asNumber(row.occupied_seats, 1),
+                }
+              : undefined,
+            womenOnly: Boolean(row.women_only),
+            status: asString(row.status, 'active') as RideStatus,
+            co2Saved: row.co2_saved_kg != null ? asNumber(row.co2_saved_kg) : undefined,
+            distanceKm: row.total_distance_meters != null ? asNumber(row.total_distance_meters) / 1000 : undefined,
+            matchScore: asNumber(row.match_score),
+            matchType: (asString(row.match_type, 'other') as 'exact' | 'nearby' | 'other'),
+            sharedDistanceKm: asNumber(row.shared_distance_km),
+            matchExplanation: asString(row.match_explanation),
+            userRouteGeometry: userRoute.geometry,
+          }));
+        }
+      } catch (err) {
+        console.warn('find_pooling_matches RPC call failed, falling back to local scoring:', err);
+      }
+
+      // 2. Fallback to local scoring if RPC is unavailable or returns 0
       const userRoute = await fetchOSRMRoute(userPickup, userDrop);
       const scoredPromises: Promise<Ride | null>[] = rides.map(async (ride) => {
         const candidatePickup = getCoordsForRidePlace(ride.pickup);
@@ -327,10 +409,6 @@ export const rideService = {
         if (!candidatePickup || !candidateDrop) return null;
 
         const candidateRoute = await fetchOSRMRoute(candidatePickup, candidateDrop);
-        if (userRoute.source === 'fallback' || candidateRoute.source === 'fallback') {
-          return null;
-        }
-
         const score = scoreRideMatch({
           userPickup,
           userDrop,
@@ -348,8 +426,6 @@ export const rideService = {
           matchType: score.matchType,
           sharedDistanceKm: score.sharedDistanceKm,
           matchExplanation: score.matchExplanation,
-          // Kept so the card and the details screen can draw BOTH routes
-          // instead of describing the match with a number.
           userRouteGeometry: userRoute.geometry,
           driverRouteGeometry: candidateRoute.geometry,
         };
@@ -407,13 +483,25 @@ export const rideService = {
     return { ok: request?.status === 'pending', status: 'pending' };
   },
 
-  async cancelRequest(rideId: string): Promise<{ ok: boolean }> {
-    const { error } = await supabase
+  async cancelRequest(
+    targetId: string,
+    requesterId?: string,
+  ): Promise<{ ok: boolean }> {
+    if (requesterId) {
+      const { data, error } = await supabase.rpc('cancel_ride_request_atomic', {
+        p_request_id: targetId,
+        p_requester_id: requesterId,
+      });
+      if (!error && data?.ok) return { ok: true };
+    }
+
+    // Fallback: match by request id or ride_id
+    const { error: reqErr } = await supabase
       .from('ride_requests')
       .update({ status: 'cancelled' })
-      .eq('ride_id', rideId)
+      .or(`id.eq.${targetId},ride_id.eq.${targetId}`)
       .eq('status', 'pending');
-    return { ok: !error };
+    return { ok: !reqErr };
   },
 
   async createRide(data: Partial<Ride>): Promise<{ ok: boolean; id: string }> {
@@ -431,6 +519,23 @@ export const rideService = {
       typeof destinationLongitude !== 'number'
     ) {
       throw new Error('Pickup, destination, and a signed-in creator are required');
+    }
+
+    let totalDistMeters = 0;
+    let totalDurSeconds = 0;
+    let routeGeoJson: string | null = null;
+    try {
+      const osrmRes = await fetchOSRMRoute(
+        { latitude: pickupLatitude, longitude: pickupLongitude },
+        { latitude: destinationLatitude, longitude: destinationLongitude }
+      );
+      if (osrmRes && osrmRes.geometry) {
+        totalDistMeters = Math.round(osrmRes.distance);
+        totalDurSeconds = Math.round(osrmRes.duration);
+        routeGeoJson = JSON.stringify(osrmRes.geometry);
+      }
+    } catch (e) {
+      console.warn('Pre-fetching route geometry failed, continuing with direct coordinates:', e);
     }
 
     const { data: inserted, error } = await supabase
@@ -455,7 +560,10 @@ export const rideService = {
         vehicle_kind: data.vehicle?.kind ?? null,
         vehicle_model: data.vehicle?.model ?? null,
         vehicle_plate: data.vehicle?.numberPlate ?? null,
-        status: data.status ?? 'active',        co2_saved_kg: data.co2Saved ?? null,
+        status: data.status ?? 'active',
+        co2_saved_kg: data.co2Saved ?? null,
+        total_distance_meters: totalDistMeters > 0 ? totalDistMeters : null,
+        total_duration_seconds: totalDurSeconds > 0 ? totalDurSeconds : null,
       })
       .select('id')
       .single();
@@ -463,6 +571,20 @@ export const rideService = {
     if (error) throw new Error(error.message);
     const id = asString((inserted as DbRow | null)?.id);
     if (!id) throw new Error('The ride was created without an id');
+
+    if (id && routeGeoJson) {
+      try {
+        await supabase.rpc('set_ride_route_geometry', {
+          p_ride_id: id,
+          p_polyline: null,
+          p_geojson: routeGeoJson,
+          p_distance_meters: totalDistMeters,
+          p_duration_seconds: totalDurSeconds,
+        });
+      } catch (err) {
+        console.warn('set_ride_route_geometry non-fatal error:', err);
+      }
+    }
 
     const ride: Ride = {
       id,
@@ -643,5 +765,74 @@ export const rideService = {
       .eq('id', rideId)
       .eq('user_id', userId);
     return { ok: !error, error: error?.message };
+  },
+
+  /** Starts the trip, setting status to in_progress and notifying passengers. */
+  async startRide(rideId: string, driverId: string): Promise<{ ok: boolean; error?: string }> {
+    const { data, error } = await supabase.rpc('start_ride', {
+      p_ride_id: rideId,
+      p_driver_id: driverId,
+    });
+    if (error) {
+      console.warn('start_ride RPC failed:', error.message);
+      const { error: updErr } = await supabase
+        .from('rides')
+        .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+        .eq('id', rideId)
+        .eq('user_id', driverId);
+      return { ok: !updErr, error: updErr?.message };
+    }
+    return { ok: Boolean(data?.ok), error: undefined };
+  },
+
+  /** Completes the trip, computing CO2 savings and crediting wallet bonuses. */
+  async completeRideTrip(
+    rideId: string,
+    driverId: string,
+  ): Promise<{ ok: boolean; co2SavedKg?: number; error?: string }> {
+    const { data, error } = await supabase.rpc('complete_ride_trip', {
+      p_ride_id: rideId,
+      p_driver_id: driverId,
+    });
+    if (error) {
+      console.warn('complete_ride_trip RPC failed:', error.message);
+      // Fallback update
+      const { error: updErr } = await supabase
+        .from('rides')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', rideId)
+        .eq('user_id', driverId);
+      return { ok: !updErr, error: updErr?.message };
+    }
+    return {
+      ok: Boolean(data?.ok),
+      co2SavedKg: typeof data?.co2_saved_kg === 'number' ? data.co2_saved_kg : undefined,
+      error: undefined,
+    };
+  },
+
+  /** Submits a 1-5 star review and feedback, updating profile rating. */
+  async submitReview(input: {
+    rideId: string;
+    reviewerId: string;
+    revieweeId: string;
+    rating: number;
+    feedback?: string;
+  }): Promise<{ ok: boolean; newAverage?: number; error?: string }> {
+    const { data, error } = await supabase.rpc('submit_ride_review', {
+      p_ride_id: input.rideId,
+      p_reviewer_id: input.reviewerId,
+      p_reviewee_id: input.revieweeId,
+      p_rating: input.rating,
+      p_feedback: input.feedback?.trim() || null,
+    });
+    if (error) {
+      console.warn('submit_ride_review RPC failed:', error.message);
+      return { ok: false, error: error.message };
+    }
+    return {
+      ok: Boolean(data?.ok),
+      newAverage: typeof data?.new_average_rating === 'number' ? data.new_average_rating : undefined,
+    };
   },
 };

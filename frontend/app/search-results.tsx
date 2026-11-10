@@ -31,6 +31,8 @@ export default function SearchResults() {
     destination?: string;
     type?: string;
     travelTime?: string;
+    travelDate?: string;
+    selectedDays?: string;
     pickupLatitude?: string;
     pickupLongitude?: string;
     pickupAccuracy?: string;
@@ -77,11 +79,21 @@ export default function SearchResults() {
           }
         : undefined;
 
+      const dayLabels = params.selectedDays
+        ? params.selectedDays
+            .split(',')
+            .map(Number)
+            .filter((n) => n >= 0 && n <= 6)
+            .map((n) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][n])
+        : undefined;
+
       const data = await rideService.getRides({
         pickup: params.pickup,
         destination: params.destination,
         type: params.type as Ride['type'] | undefined,
         time: params.travelTime,
+        date: params.travelDate,
+        days: dayLabels,
         pickupCoordinates,
         destinationCoordinates,
         // Never offer the rider their own post back as a ride twin.
@@ -105,6 +117,8 @@ export default function SearchResults() {
     params.pickupLatitude,
     params.pickupLongitude,
     params.pickupTimestamp,
+    params.selectedDays,
+    params.travelDate,
     params.travelTime,
     params.type,
   ]);

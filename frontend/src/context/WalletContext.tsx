@@ -65,6 +65,7 @@ type WalletContextValue = {
   applyReferralCode: (code: string) => Promise<{ ok: boolean; message: string }>;
   shareInvite: (channel: 'whatsapp' | 'telegram' | 'sms' | 'native') => Promise<boolean>;
   inviteLink: string | null;
+  deductBalance: (amount: number, note?: string, referenceId?: string) => Promise<boolean>;
 };
 
 const REFERRAL_REWARD = 5;
@@ -279,6 +280,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [referralCode, referrals],
   );
 
+  const deductBalance = useCallback(
+    async (amount: number, note?: string, referenceId?: string): Promise<boolean> => {
+      if (!userId || amount <= 0) return false;
+      try {
+        const { data, error } = await supabase.rpc('spend_wallet_balance', {
+          p_user_id: userId,
+          p_amount: amount,
+          p_note: note ?? null,
+          p_reference_id: referenceId ?? null,
+        });
+        if (error) throw error;
+        const res = data as { ok: boolean; reason?: string };
+        if (res?.ok) {
+          await refresh();
+          return true;
+        }
+        return false;
+      } catch (err) {
+        console.warn('deductBalance failed:', err);
+        return false;
+      }
+    },
+    [refresh, userId],
+  );
+
   const value = useMemo<WalletContextValue>(
     () => ({
       balance,
@@ -296,10 +322,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       applyReferralCode,
       shareInvite,
       inviteLink,
+      deductBalance,
     }),
     [
       applyReferralCode,
       balance,
+      deductBalance,
       rewardBalance,
       error,
       inviteLink,

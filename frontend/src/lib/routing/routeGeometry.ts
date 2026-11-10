@@ -1,4 +1,4 @@
-import { Coordinates, RouteGeometry } from './osrm';
+import type { Coordinates, RouteGeometry } from './osrm.ts';
 
 /**
  * Calculates Haversine distance between two coordinates in kilometers.

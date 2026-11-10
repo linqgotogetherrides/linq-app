@@ -1,10 +1,10 @@
-import { RouteGeometry } from './osrm';
+import type { RouteGeometry } from './osrm.ts';
 import {
   calculateRouteBearing,
   calculateRouteLengthKm,
   distanceToRouteKm,
   sampleRoutePoints,
-} from './routeGeometry';
+} from './routeGeometry.ts';
 
 export interface CorridorMatchResult {
   aToBOverlapRatio: number; // 0..1

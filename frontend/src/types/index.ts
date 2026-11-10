@@ -3,7 +3,7 @@ import type { RouteGeometry } from '@/src/lib/routing/osrm';
 export type RideType = 'instant' | 'daily' | 'planned';
 export type VehicleKind = 'car' | 'bike' | 'auto' | 'cab';
 export type MatchType = 'exact' | 'nearby' | 'other';
-export type RideStatus = 'draft' | 'active' | 'confirmed' | 'completed' | 'cancelled';
+export type RideStatus = 'draft' | 'active' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
 export type RequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 export type VerificationStatus = 'verified' | 'pending' | 'not_verified';
 export type VerificationDocument = 'aadhaar' | 'pan' | 'dl';

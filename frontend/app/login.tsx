@@ -7,7 +7,7 @@ import { sanitizeNext, destinationAfterAuth } from '@/src/lib/authNavigation';
 import { useApp } from '@/src/context/AppContext';
 import { signInWithPhoneNumber } from '../src/lib/auth';
 import { signInWithProvider } from '../src/lib/oauth';
-import { saveProfile, userProfileExists } from '../src/services/userProfile';
+import { ensureUserProfile, saveProfile, userProfileExists } from '../src/services/userProfile';
 import { saveSession } from '../src/services/session';
 import LinqLogo from '@/src/components/LinqLogo';
 import Mission1000Banner from '@/src/components/Mission1000Banner';
@@ -32,10 +32,47 @@ export default function Login() {
     router.replace('/(tabs)/home');
   };
 
+  const handleWebTestLogin = async (overridePhone?: string, overrideName?: string) => {
+    const rawDigits = (overridePhone || phone).replace(/\D/g, '');
+    if (rawDigits.length < 10) {
+      showToast('Enter a 10-digit mobile number to sign in');
+      return;
+    }
+    setLoading(true);
+    try {
+      const cleanPhone = rawDigits.slice(-10);
+      const testUid = `usr_${cleanPhone}`;
+      const name =
+        overrideName ||
+        (overridePhone
+          ? overridePhone === '9876543210'
+            ? 'Arjun (Driver)'
+            : 'Priya (Passenger)'
+          : `User ${cleanPhone.slice(-4)}`);
+
+      await ensureUserProfile({
+        userId: testUid,
+        name,
+        phone: cleanPhone,
+        avatarUrl:
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80',
+      });
+
+      await saveSession(testUid);
+      await fetchUserProfile(testUid);
+      showToast(`Welcome back, ${name}!`);
+      router.replace(destinationAfterAuth(next));
+    } catch (e: any) {
+      showToast(e.message || 'Error signing in on web');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogin = async () => {
     if (!valid) return;
     if (isWeb) {
-      showToast('Phone sign-in is not available on the web. Use Google or the mobile app.');
+      await handleWebTestLogin();
       return;
     }
     try {
@@ -106,15 +143,59 @@ export default function Login() {
 
           <View style={{ flex: 1, justifyContent: 'center', paddingVertical: spacing['2xl'] }}>
             {isWeb ? (
-              <View style={styles.card} testID="web-auth-lockdown">
+              <View style={styles.card} testID="web-auth-login">
                 <View style={styles.noticeHeader}>
-                  <Ionicons name="lock-closed" size={20} color={colors.primary} />
-                  <Text style={styles.noticeTitle}>Phone sign-in is disabled on the web</Text>
+                  <Ionicons name="laptop-outline" size={22} color={colors.primary} />
+                  <Text style={styles.noticeTitle}>Local Web Testing Mode</Text>
                 </View>
                 <Text style={styles.noticeText}>
-                  For your security, phone numbers can only be verified in the Linq
-                  mobile app. Continue with Google here, or open Linq on your phone.
+                  Testing on your laptop browser. Enter any 10-digit number or use the 1-click test profiles below to test the full ride lifecycle.
                 </Text>
+
+                <View style={[styles.inputRow, { marginTop: spacing.md }]}>
+                  <View style={styles.cc}>
+                    <Text style={styles.flag}>🇮🇳</Text>
+                    <Text style={styles.ccText}>+91</Text>
+                  </View>
+                  <TextInput
+                    testID="phone-input"
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="Enter test mobile number"
+                    placeholderTextColor={colors.textTertiary}
+                    keyboardType="phone-pad"
+                    style={styles.input}
+                    maxLength={10}
+                  />
+                </View>
+
+                <PrimaryButton
+                  testID="web-login-continue"
+                  title={loading ? 'Signing in…' : 'Continue to App'}
+                  iconRight={loading ? undefined : 'arrow-forward'}
+                  disabled={!valid || loading}
+                  onPress={() => void handleWebTestLogin()}
+                />
+
+                <View style={styles.webQuickRow}>
+                  <Pressable
+                    style={styles.webQuickBtn}
+                    disabled={loading}
+                    onPress={() => void handleWebTestLogin('9876543210', 'Arjun (Driver)')}
+                  >
+                    <Ionicons name="car-outline" size={16} color={colors.primary} />
+                    <Text style={styles.webQuickText}>Login as Driver</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.webQuickBtn}
+                    disabled={loading}
+                    onPress={() => void handleWebTestLogin('9123456780', 'Priya (Passenger)')}
+                  >
+                    <Ionicons name="person-outline" size={16} color={colors.primary} />
+                    <Text style={styles.webQuickText}>Login as Passenger</Text>
+                  </Pressable>
+                </View>
               </View>
             ) : (
               <>
@@ -194,4 +275,27 @@ const styles = StyleSheet.create({
   },
   socialText: { fontSize: font.size.base, color: colors.textPrimary, fontWeight: font.weight.medium },
   link: { textAlign: 'center', color: colors.textSecondary, fontSize: font.size.base, marginTop: spacing.sm },
+  webQuickRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  webQuickBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  webQuickText: {
+    fontSize: font.size.xs,
+    fontWeight: font.weight.medium,
+    color: colors.primary,
+  },
 });

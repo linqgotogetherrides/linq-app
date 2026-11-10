@@ -25,8 +25,9 @@ export default function Emergency() {
   const [photoAdded, setPhotoAdded] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const { uid } = useLocalSearchParams<{ uid: string }>();
-  const { fetchUserProfile, showToast } = useApp();
+  const { uid } = useLocalSearchParams<{ uid?: string }>();
+  const { user, fetchUserProfile, showToast } = useApp();
+  const effectiveUid = user?.id || (typeof uid === 'string' ? uid : null);
 
   const handleUploadPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -43,7 +44,7 @@ export default function Emergency() {
   };
 
   const handleContinue = async () => {
-    if (!uid) {
+    if (!effectiveUid) {
       router.push('/verification');
       return;
     }
@@ -57,12 +58,12 @@ export default function Emergency() {
         updates.avatar_url = avatarUrl;
       }
       
-      const { error } = await supabase.from('user_profiles').update(updates).eq('id', uid);
+      const { error } = await supabase.from('user_profiles').update(updates).eq('id', effectiveUid);
       
       if (error) throw error;
       
-      await fetchUserProfile(uid);
-      router.push({ pathname: '/verification', params: { uid } });
+      await fetchUserProfile(effectiveUid);
+      router.push({ pathname: '/verification', params: { uid: effectiveUid } });
     } catch (e: any) {
       showToast(e.message || 'Failed to update profile');
     } finally {
@@ -75,7 +76,7 @@ export default function Emergency() {
         <ScrollView contentContainerStyle={{ padding: spacing.xl }} keyboardShouldPersistTaps="handled">
           <View style={styles.top}>
             <LinqLogo size={40} showText={false} />
-            <Pressable onPress={() => router.replace({ pathname: '/verification', params: { uid } })} testID="skip-emergency"><Text style={styles.skip}>Skip</Text></Pressable>
+            <Pressable onPress={() => router.replace({ pathname: '/verification', params: { uid: effectiveUid ?? '' } })} testID="skip-emergency"><Text style={styles.skip}>Skip</Text></Pressable>
           </View>
 
           <View style={styles.card}>

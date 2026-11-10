@@ -11,6 +11,7 @@ export const PLAN_AMOUNTS: Record<string, number> = {
   yearly: 19900,
   two_year: 24900,
   single_unlock: 900,
+  connection_fee: 900,
   wallet_topup: 50000,
   // Unlocked by the "Fill the Ride" 10-win milestone. Eligibility is checked
   // against game_profiles server-side, never trusted from the client.

@@ -26,6 +26,9 @@ export interface ChatThread {
   otherUserId: string;
   otherName?: string;
   otherAvatar?: string;
+  otherPhone?: string;
+  contactUnlocked?: boolean;
+  rideStatus?: string;
   lastMessage?: string;
   lastMessageAt: string;
   unreadCount: number;
@@ -47,6 +50,9 @@ function mapThread(row: Record<string, unknown>): ChatThread {
     otherUserId: String(row.other_user_id ?? ''),
     otherName: asString(row.other_name),
     otherAvatar: asString(row.other_avatar),
+    otherPhone: asString(row.other_phone),
+    contactUnlocked: Boolean(row.contact_unlocked),
+    rideStatus: asString(row.ride_status),
     lastMessage: asString(row.last_message),
     lastMessageAt: String(row.last_message_at ?? new Date().toISOString()),
     unreadCount: Number(row.unread_count ?? 0) || 0,
@@ -124,5 +130,28 @@ export const chatService = {
     return () => {
       void supabase.removeChannel(channel);
     };
+  },
+
+  /** Unlocks verified contact number sharing for both participants. */
+  async unlockContact(
+    conversationId: string,
+    userId: string,
+    paymentRef?: string,
+  ): Promise<boolean> {
+    const { data, error } = await supabase.rpc('unlock_conversation_contact', {
+      p_conversation_id: conversationId,
+      p_user_id: userId,
+      p_payment_ref: paymentRef ?? null,
+    });
+    if (error) {
+      console.warn('unlock_conversation_contact failed:', error.message);
+      // Fallback direct update
+      const { error: updErr } = await supabase
+        .from('conversations')
+        .update({ contact_unlocked: true, unlocked_by: userId, unlocked_at: new Date().toISOString() })
+        .eq('id', conversationId);
+      return !updErr;
+    }
+    return Boolean(data?.ok || data?.contact_unlocked);
   },
 };

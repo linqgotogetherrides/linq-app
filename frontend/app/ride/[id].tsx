@@ -10,8 +10,10 @@ import PrimaryButton from '@/src/components/PrimaryButton';
 import LeafletMap from '@/src/components/LeafletMap';
 import { useApp } from '@/src/context/AppContext';
 import { useCurrentLocation } from '@/src/hooks/useCurrentLocation';
+import { supabase } from '@/src/lib/supabase';
 import { rideService } from '@/src/services/rideService';
 import { rideRequestService } from '@/src/services/rideRequestService';
+import RatingFeedbackModal from '@/src/components/RatingFeedbackModal';
 import { Ride } from '@/src/types';
 import { fetchOSRMRoute, RouteGeometry } from '@/src/lib/routing/osrm';
 import { colors, spacing, font, radius, shadow } from '@/src/theme/tokens';
@@ -62,6 +64,10 @@ export default function RideDetails() {
   } = useCurrentLocation({ autoLoad: true });
   const [ride, setRide] = useState<Ride | null>(null);
   const [requested, setRequested] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
   // request_ride() rejects self-requests server-side; reflect that in the UI so
   // the CTA is never a button that can only fail.
   const isOwnRide = Boolean(user?.id && ride?.creator?.id === user.id);
@@ -110,25 +116,48 @@ export default function RideDetails() {
   }, [userPickupLatitude, userPickupLongitude, userDestinationLatitude, userDestinationLongitude]);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (id) {
         const fetched = await rideService.getRideById(id);
+        if (cancelled) return;
         if (fetched) {
           setRide(fetched);
           const pickup = getRideCoordinates(fetched.pickup);
           const destination = getRideCoordinates(fetched.destination);
-          if (!pickup || !destination) return;
+          if (pickup && destination) {
+            try {
+              const routeRes = await fetchOSRMRoute(pickup, destination);
+              if (!cancelled && routeRes.source === 'road') setRouteGeometry(routeRes.geometry);
+            } catch (err) {
+              console.warn('Failed to load OSRM geometry:', err);
+            }
+          }
+        }
 
-          try {
-            const routeRes = await fetchOSRMRoute(pickup, destination);
-            if (routeRes.source === 'road') setRouteGeometry(routeRes.geometry);
-          } catch (err) {
-            console.warn('Failed to load OSRM geometry:', err);
+        if (user?.id) {
+          const { data: existingReq } = await supabase
+            .from('ride_requests')
+            .select('id, status')
+            .eq('ride_id', id)
+            .eq('requester_id', user.id)
+            .neq('status', 'cancelled')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!cancelled && existingReq) {
+            setRequestId(existingReq.id);
+            setRequestStatus(existingReq.status);
+            setRequested(true);
           }
         }
       }
     })();
-  }, [id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user?.id]);
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -150,7 +179,10 @@ export default function RideDetails() {
 
   const onRequest = async () => {
     if (!user) {
-      router.push('/onboarding');
+      router.push({
+        pathname: '/login',
+        params: { next: `/ride/${id}` },
+      });
       return;
     }
     if (requesting) return;
@@ -159,8 +191,27 @@ export default function RideDetails() {
       return;
     }
     if (requested) {
-      setRequested(false);
-      showToast('Request cancelled');
+      if (requestId) {
+        setRequesting(true);
+        try {
+          const result = await rideService.cancelRequest(requestId, user.id);
+          if (result.ok) {
+            setRequested(false);
+            setRequestId(null);
+            setRequestStatus(null);
+            showToast('Request cancelled');
+          } else {
+            showToast('Could not cancel request');
+          }
+        } catch {
+          showToast('Failed to cancel request');
+        } finally {
+          setRequesting(false);
+        }
+      } else {
+        setRequested(false);
+        showToast('Request cancelled');
+      }
       return;
     }
     const ok = consumeRequest();
@@ -173,11 +224,49 @@ export default function RideDetails() {
     try {
       await rideRequestService.requestRide(ride.id, user.id);
       setRequested(true);
+      setRequestStatus('pending');
       showToast('Request sent to ' + ride.creator.name);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'The ride request could not be sent.');
     } finally {
       setRequesting(false);
+    }
+  };
+
+  const handleStartJourney = async () => {
+    if (!ride || !user?.id) return;
+    setJourneyLoading(true);
+    try {
+      const res = await rideService.startRide(ride.id, user.id);
+      if (res.ok) {
+        showToast('Journey started! Drive safely.');
+        setRide((prev) => (prev ? { ...prev, status: 'in_progress' } : null));
+      } else {
+        showToast(res.error || 'Could not start journey');
+      }
+    } catch {
+      showToast('Failed to start journey');
+    } finally {
+      setJourneyLoading(false);
+    }
+  };
+
+  const handleCompleteRide = async () => {
+    if (!ride || !user?.id) return;
+    setJourneyLoading(true);
+    try {
+      const res = await rideService.completeRideTrip(ride.id, user.id);
+      if (res.ok) {
+        showToast('Ride completed! ₹5 credited.');
+        setRide((prev) => (prev ? { ...prev, status: 'completed' } : null));
+        setReviewModalVisible(true);
+      } else {
+        showToast(res.error || 'Could not complete ride');
+      }
+    } catch {
+      showToast('Failed to complete ride');
+    } finally {
+      setJourneyLoading(false);
     }
   };
 
@@ -418,25 +507,44 @@ export default function RideDetails() {
         <View style={{ flex: 1 }}>
           {isOwnRide ? (
             <View style={styles.ownerActions}>
-              <PrimaryButton
-                testID="own-ride-edit"
-                title="Edit the Ride"
-                icon="create-outline"
-                onPress={() =>
-                  router.push({
-                    pathname: '/create-ride',
-                    params: { rideId: ride.id },
-                  })
-                }
-              />
+              {ride.status === 'in_progress' ? (
+                <PrimaryButton
+                  testID="own-ride-complete"
+                  title="Complete Ride"
+                  icon="checkmark-done"
+                  loading={journeyLoading}
+                  onPress={handleCompleteRide}
+                />
+              ) : ride.status === 'completed' ? (
+                <PrimaryButton
+                  testID="own-ride-completed"
+                  title="Ride Completed"
+                  icon="checkmark-circle"
+                  disabled
+                  onPress={() => {}}
+                />
+              ) : (
+                <PrimaryButton
+                  testID="own-ride-start"
+                  title="Start Journey"
+                  icon="play"
+                  loading={journeyLoading}
+                  onPress={handleStartJourney}
+                />
+              )}
               <View style={styles.ownerActionsRow}>
                 <View style={styles.ownerActionHalf}>
                   <PrimaryButton
-                    testID="own-ride-search-again"
-                    title="Search Again"
+                    testID="own-ride-edit"
+                    title="Edit Ride"
                     variant="secondary"
-                    icon="search-outline"
-                    onPress={handleSearchAgainWithThisRide}
+                    icon="create-outline"
+                    onPress={() =>
+                      router.push({
+                        pathname: '/create-ride',
+                        params: { rideId: ride.id },
+                      })
+                    }
                   />
                 </View>
                 <View style={styles.ownerActionHalf}>
@@ -449,6 +557,24 @@ export default function RideDetails() {
                   />
                 </View>
               </View>
+            </View>
+          ) : requestStatus === 'accepted' ? (
+            <View style={{ gap: spacing.xs }}>
+              {ride.status === 'completed' ? (
+                <PrimaryButton
+                  testID="passenger-rate-ride"
+                  title="Rate Your Experience"
+                  icon="star"
+                  onPress={() => setReviewModalVisible(true)}
+                />
+              ) : (
+                <PrimaryButton
+                  testID="passenger-open-chat"
+                  title="Open Chat with Driver"
+                  icon="chatbubble-ellipses"
+                  onPress={() => router.push('/(tabs)/messages')}
+                />
+              )}
             </View>
           ) : (
             <PrimaryButton
@@ -477,6 +603,18 @@ export default function RideDetails() {
         onCancel={() => setConfirmingDelete(false)}
         onConfirm={() => void handleDeleteThisRide()}
       />
+
+      {ride && user?.id ? (
+        <RatingFeedbackModal
+          visible={reviewModalVisible}
+          rideId={ride.id}
+          reviewerId={user.id}
+          revieweeId={ride.creator.id}
+          revieweeName={ride.creator.name}
+          onClose={() => setReviewModalVisible(false)}
+          onSuccess={() => showToast('Thank you for rating your trip!')}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

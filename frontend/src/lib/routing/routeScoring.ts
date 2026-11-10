@@ -1,6 +1,6 @@
-import { Coordinates, RouteGeometry } from './osrm';
-import { haversineDistanceKm } from './routeGeometry';
-import { matchRoutes } from './routeMatcher';
+import type { Coordinates, RouteGeometry } from './osrm.ts';
+import { haversineDistanceKm } from './routeGeometry.ts';
+import { matchRoutes } from './routeMatcher.ts';
 
 export interface RouteScoreWeights {
   routeOverlap: number; // default: 0.50
