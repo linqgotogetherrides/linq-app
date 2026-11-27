@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#ffffff">
+<title>LinQ | Be part of the first move</title>
+<style>
+:root{--blue:#1765e9;--navy:#102b50;--ink:#1d3555;--muted:#71829a;--line:#e7edf5;--pale:#f4f7fc;--green:#16a477}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#f5f7fb;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input{font:inherit}
+.layout{width:min(1160px,100%);min-height:100vh;margin:auto;padding:42px 34px;display:grid;grid-template-columns:minmax(300px,1fr) 430px;gap:70px;align-items:center}
+.left{max-width:510px}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:62px;color:var(--navy);font-size:25px;font-weight:850;letter-spacing:-1.5px}
+.brandmark{width:35px;height:35px;border-radius:11px;background:var(--blue);color:white;display:grid;place-items:center;font-size:21px;font-weight:800}
+.brand span{color:var(--blue)}
+.kicker{display:inline-flex;align-items:center;gap:9px;color:var(--blue);font-size:10px;font-weight:850;letter-spacing:1.8px;text-transform:uppercase;margin-bottom:20px}
+.kicker:before{content:"";width:22px;height:2px;background:var(--blue)}
+h1{font-size:clamp(42px,5vw,62px);line-height:1.02;letter-spacing:-3px;color:var(--navy);margin:0 0 22px;font-weight:780}
+h1 span{color:var(--blue)}
+.lead{max-width:450px;color:var(--muted);font-size:16px;line-height:1.8;margin:0}
+.promise{display:flex;gap:26px;flex-wrap:wrap;margin-top:42px;padding-top:23px;border-top:1px solid var(--line)}
+.promise div{font-size:11px;color:#71829a;font-weight:650}
+.promise b{display:block;color:var(--navy);font-size:13px;margin-bottom:5px}
+.preview-label{margin-top:52px;font-size:10px;letter-spacing:1.4px;color:#9aa7b8;text-transform:uppercase;font-weight:800}
+.device-wrap{display:flex;justify-content:center;align-items:center}
+.device{width:390px;min-height:760px;background:#fff;border:7px solid #142a46;border-radius:39px;overflow:hidden;box-shadow:0 28px 90px #1d35551c;display:flex;flex-direction:column;position:relative}
+.status{height:28px;display:flex;justify-content:space-between;align-items:center;padding:0 19px;color:#53657d;font-size:10px;font-weight:750}
+.screen{display:none;flex:1;padding:20px 27px 25px;flex-direction:column;animation:appear .22s ease}
+.screen.active{display:flex}
+@keyframes appear{from{opacity:.35;transform:translateY(5px)}to{opacity:1;transform:none}}
+.screen-head{display:flex;align-items:center;justify-content:space-between}
+.mini-brand{font-size:22px;font-weight:900;letter-spacing:-1.4px;color:var(--navy)}
+.mini-brand span{color:var(--blue)}
+.progress{display:flex;gap:4px;align-items:center}
+.progress i{width:17px;height:3px;border-radius:4px;background:#e6ebf3}
+.progress i.on{background:var(--blue)}
+.content{padding-top:53px;flex:1}
+.eyebrow{font-size:9px;letter-spacing:1.7px;font-weight:850;color:var(--blue);margin-bottom:17px;text-transform:uppercase}
+h2{font-size:39px;line-height:1.06;letter-spacing:-1.9px;color:var(--navy);margin:0 0 17px;font-weight:780}
+h2 span{color:var(--blue)}
+.description{font-size:13px;line-height:1.75;color:var(--muted);margin:0}
+.info-panel{background:#f5f8fd;border:1px solid #e9eff8;border-radius:16px;padding:17px 18px;margin:29px 0 22px}
+.info-panel b{display:block;color:var(--navy);font-size:12px;margin-bottom:7px}
+.info-panel p{margin:0;color:var(--muted);font-size:11px;line-height:1.65}
+.motto{display:flex;align-items:center;gap:10px;color:#9aa7b8;font-size:9px;letter-spacing:1.7px;font-weight:850;margin:20px 0}
+.motto:before,.motto:after{content:"";height:1px;background:#e8edf4;flex:1}
+.primary{width:100%;border:0;border-radius:12px;background:var(--blue);color:white;padding:16px 18px;font-size:11px;font-weight:850;letter-spacing:1px;cursor:pointer;box-shadow:0 8px 18px #1765e926}
+.primary:hover{background:#0f55cb}
+.primary:focus-visible,.nav button:focus-visible,input:focus-visible{outline:3px solid #a9c7ff;outline-offset:3px}
+.subtext{text-align:center;font-size:9px;color:#9aa7b8;margin:12px 0 0}
+.field{margin:16px 0}
+.field label{display:block;font-size:9px;font-weight:850;letter-spacing:1px;color:#53657d;margin-bottom:8px}
+.field input{width:100%;border:1px solid #dfe7f1;border-radius:11px;padding:14px 13px;background:#fff;color:var(--ink);font-size:12px;outline:none}
+.field input:focus{border-color:#8ab2fa}
+.field input::placeholder{color:#aab5c4}
+.privacy{font-size:9px;line-height:1.65;color:#9aa7b8;margin:18px 0}
+.success-icon{width:58px;height:58px;display:grid;place-items:center;border-radius:18px;background:#eaf7f2;color:var(--green);font-size:27px;font-weight:800;margin-bottom:27px}
+.prize-card{border-radius:18px;padding:22px 21px;margin:26px 0 20px;color:#fff;background:linear-gradient(135deg,#1765e9,#123e91);position:relative;overflow:hidden}
+.prize-card:after{content:"";position:absolute;width:175px;height:175px;border:1px solid #ffffff35;border-radius:50%;right:-65px;top:-88px;box-shadow:0 0 0 20px #ffffff0d,0 0 0 40px #ffffff08}
+.prize-card small{font-size:9px;letter-spacing:1.5px;font-weight:850;color:#dce8ff}
+.prize-card strong{display:block;font-size:42px;letter-spacing:-2px;margin:8px 0 3px}
+.prize-card p{font-size:10px;line-height:1.6;color:#e0eaff;margin:0;max-width:230px}
+.steps{display:grid;gap:13px;margin:22px 0 24px}
+.step{display:flex;align-items:center;gap:11px;color:#61738c;font-size:10px;line-height:1.5}
+.step b{width:24px;height:24px;flex:0 0 24px;border-radius:8px;background:#edf3ff;color:var(--blue);display:grid;place-items:center;font-size:10px}
+.nav{display:flex;align-items:center;justify-content:space-between;margin-top:22px}
+.nav button{border:1px solid #e1e8f1;background:white;color:#53657d;border-radius:9px;padding:9px 12px;font-size:10px;font-weight:750;cursor:pointer}
+.nav button:disabled{opacity:.35;cursor:default}
+.nav span{font-size:9px;color:#9aa7b8;letter-spacing:1px;font-weight:800}
+.preview-disclaimer{max-width:370px;margin:14px auto 0;text-align:center;color:#9aa7b8;font-size:9px;line-height:1.55}
+@media(max-width:850px){.layout{grid-template-columns:1fr;gap:35px;padding:30px 20px}.left{text-align:center;margin:auto}.brand{justify-content:center;margin-bottom:35px}.lead{margin:auto}.promise{justify-content:center;margin-top:28px}.preview-label{margin-top:28px}.device{width:min(390px,100%);min-height:730px}}
+@media(max-width:420px){.layout{padding:20px 12px}.device{border-width:6px;border-radius:31px;min-height:700px}.screen{padding:17px 21px 22px}.content{padding-top:42px}h2{font-size:35px}.left h1{font-size:42px}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <section class="left">
+    <div class="brand"><div class="brandmark">L</div><div>Lin<span>Q</span></div></div>
+    <div class="kicker">A new way to move together</div>
+    <h1>Be part of<br>the <span>first move.</span></h1>
+    <p class="lead">A more connected commute starts with people moving in the same direction. Join the LinQ pre-launch community and help shape what comes next.</p>
+    <div class="promise">
+      <div><b>01 / Join</b>Register your interest</div>
+      <div><b>02 / Connect</b>Bring your people along</div>
+      <div><b>03 / Celebrate</b>Take part in the campaign</div>
+    </div>
+    <div class="preview-label">LinQ pre-launch · Four-screen campaign preview</div>
+  </section>
+
+  <section class="device-wrap">
+    <main class="device" aria-label="LinQ pre-launch campaign preview">
+      <div class="status"><span>9:41</span><span>● ● ●　▰</span></div>
+
+      <section class="screen active" data-screen="0">
+        <header class="screen-head"><div class="mini-brand">Lin<span>Q</span></div><div class="progress"><i class="on"></i><i></i><i></i><i></i></div></header>
+        <div class="content">
+          <div class="eyebrow">The movement starts here</div>
+          <h2>Your journey.<br><span>Your people.</span></h2>
+          <p class="description">A smarter way to move together is almost here. Be among the first to experience LinQ.</p>
+          <div class="info-panel"><b>Get in at the beginning.</b><p>Register your interest, connect with your community and be part of the LinQ pre-launch.</p></div>
+          <div class="motto">NO SOLO. SAATH CHALO.</div>
+        </div>
+        <button class="primary" data-next>JOIN THE PRE-LAUNCH &nbsp;→</button>
+        <p class="subtext">People · Places · Shared journeys</p>
+      </section>
+
+      <section class="screen" data-screen="1">
+        <header class="screen-head"><div class="mini-brand">Lin<span>Q</span></div><div class="progress"><i class="on"></i><i class="on"></i><i></i><i></i></div></header>
+        <div class="content" style="padding-top:36px">
+          <div class="eyebrow">01 — Registration</div>
+          <h2>Let's get<br><span>you started.</span></h2>
+          <p class="description">Share a few details to register your interest in the LinQ launch.</p>
+          <form id="interestForm">
+            <div class="field"><label for="name">FULL NAME</label><input id="name" name="name" autocomplete="name" placeholder="Your name" required></div>
+            <div class="field"><label for="phone">MOBILE NUMBER</label><input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" pattern="[0-9 +()-]{10,15}" placeholder="Your mobile number" required></div>
+            <div class="field"><label for="referral">REFERRAL CODE <span style="font-weight:500;color:#9aa7b8">(OPTIONAL)</span></label><input id="referral" name="referral" placeholder="Enter a code, if you have one"></div>
+            <p class="privacy">By submitting, you agree that LinQ may contact you with pre-launch updates. Your details are not submitted or stored in this preview.</p>
+            <button class="primary" type="submit">REGISTER INTEREST &nbsp;→</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="screen" data-screen="2">
+        <header class="screen-head"><div class="mini-brand">Lin<span>Q</span></div><div class="progress"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div></header>
+        <div class="content">
+          <div class="success-icon">✓</div>
+          <div class="eyebrow">02 — Confirmation</div>
+          <h2>You're on<br><span>the list.</span></h2>
+          <p class="description">Thanks for showing interest in LinQ. You're one step closer to being part of a more connected commute.</p>
+          <div class="info-panel"><b>Good journeys are better shared.</b><p>Invite friends, colleagues and fellow commuters to join the pre-launch community.</p></div>
+        </div>
+        <button class="primary" data-next>EXPLORE THE LUCKY DIP &nbsp;→</button>
+        <p class="subtext">Preview confirmation only — no registration has been submitted.</p>
+      </section>
+
+      <section class="screen" data-screen="3">
+        <header class="screen-head"><div class="mini-brand">Lin<span>Q</span></div><div class="progress"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div></header>
+        <div class="content" style="padding-top:35px">
+          <div class="eyebrow">03 — Invite & participate</div>
+          <h2>Move together.<br><span>Celebrate together.</span></h2>
+          <div class="prize-card"><small>LINQ PRE-LAUNCH · LUCKY DIP</small><strong>₹10,000</strong><p>Proposed campaign prize pool. Official terms and eligibility will be announced before launch.</p></div>
+          <div class="steps">
+            <div class="step"><b>1</b><span>Share LinQ with friends and fellow commuters.</span></div>
+            <div class="step"><b>2</b><span>Invite them to register through your referral link.</span></div>
+            <div class="step"><b>3</b><span>Participate in accordance with the official campaign rules.</span></div>
+          </div>
+        </div>
+        <button class="primary" id="shareBtn">INVITE YOUR PEOPLE &nbsp;↗</button>
+        <p class="subtext" id="shareStatus">Campaign details and rules will be published before participation opens.</p>
+      </section>
+    </main>
+    <div class="preview-disclaimer">Interactive design preview · Sample registration only · Not connected to a live database or prize draw.</div>
+  </section>
+</div>
+<script>
+const screens=[...document.querySelectorAll('.screen')];let current=0;
+function show(n){current=Math.max(0,Math.min(3,n));screens.forEach((s,i)=>s.classList.toggle('active',i===current));}
+document.querySelectorAll('[data-next]').forEach(b=>b.addEventListener('click',()=>show(current+1)));
+document.getElementById('interestForm').addEventListener('submit',e=>{e.preventDefault();if(e.currentTarget.reportValidity())show(2);});
+document.getElementById('shareBtn').addEventListener('click',async()=>{const msg='Join the LinQ pre-launch community. No Solo. Saath Chalo!';const status=document.getElementById('shareStatus');try{if(navigator.share){await navigator.share({title:'Join LinQ',text:msg});status.textContent='Thanks for sharing LinQ.';}else if(navigator.clipboard){await navigator.clipboard.writeText(msg);status.textContent='Invite message copied. Add the official campaign link before sharing.';}else{status.textContent=msg;}}catch(err){if(err.name!=='AbortError')status.textContent=msg;}});
+</script>
+</body>
+</html>
